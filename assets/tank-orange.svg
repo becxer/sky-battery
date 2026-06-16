@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 96">
+  <defs>
+    <linearGradient id="body" x1="20" y1="20" x2="136" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe0b7"/>
+      <stop offset=".18" stop-color="#ff9269"/>
+      <stop offset="1" stop-color="#c54e35"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(160 0) scale(-1 1)">
+    <ellipse cx="78" cy="78" rx="63" ry="12" fill="#000" opacity=".22"/>
+    <rect x="24" y="48" width="102" height="33" rx="15" fill="#17202a"/>
+    <circle cx="45" cy="65" r="8" fill="#0c1118"/>
+    <circle cx="68" cy="65" r="8" fill="#0c1118"/>
+    <circle cx="91" cy="65" r="8" fill="#0c1118"/>
+    <circle cx="114" cy="65" r="8" fill="#0c1118"/>
+    <path d="M21 49c7-19 22-28 45-28h25c25 0 42 11 49 32l-18 18H41z" fill="url(#body)"/>
+    <path d="M53 24c8-12 35-14 49-2 7 6 10 17 6 27H48c-4-10-2-18 5-25z" fill="url(#body)"/>
+    <path d="M38 47c22-12 58-15 84 0" fill="none" stroke="#fff" stroke-width="7" opacity=".24" stroke-linecap="round"/>
+    <path d="M55 27c14-5 31-5 44 1" fill="none" stroke="#fff" stroke-width="5" opacity=".28" stroke-linecap="round"/>
+  </g>
+</svg>

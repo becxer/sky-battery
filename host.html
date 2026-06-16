@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sky Battery Host</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="host-shell">
+      <section class="host-panel">
+        <h1>Sky Battery Host</h1>
+        <p id="hostStatus" class="host-status">Loading world status...</p>
+
+        <label class="host-count">
+          Players
+          <input id="playerCount" type="range" min="1" max="6" value="3" />
+          <strong id="playerCountValue">3</strong>
+        </label>
+
+        <div class="host-actions">
+          <button id="startWorldButton" type="button">Start World</button>
+          <button id="recreateWorldButton" class="danger" type="button">Recreate World</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="host.js?v=20260616-host-one-player"></script>
+  </body>
+</html>

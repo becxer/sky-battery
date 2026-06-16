@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sky Battery</title>
+    <link rel="stylesheet" href="style.css?v=20260616-large-controls" />
+  </head>
+  <body>
+    <div id="loginOverlay" class="login-overlay">
+      <form id="loginForm" class="login-box">
+        <h1>Sky Battery</h1>
+        <label>
+          Name
+          <input id="nameInput" type="text" maxlength="16" autocomplete="nickname" required />
+        </label>
+        <p id="loginError" class="login-error" role="alert"></p>
+        <button type="submit">Join Game</button>
+      </form>
+    </div>
+
+    <main class="shell">
+      <div class="game-stage">
+        <canvas id="game" width="1200" height="540" aria-label="Three player artillery game"></canvas>
+
+        <button id="resetButton" class="reset-overlay" type="button">Reset</button>
+
+        <section class="controls" aria-label="Shot controls">
+          <div class="move-controls" aria-label="Move controls">
+            <button id="moveLeftButton" class="move-button move-left" type="button" aria-label="Move left">
+              <span aria-hidden="true"></span>
+            </button>
+            <button id="moveRightButton" class="move-button move-right" type="button" aria-label="Move right">
+              <span aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="move-meter" aria-label="Move remaining">
+            <span>Move</span>
+            <strong id="moveValue">0</strong>
+          </div>
+          <label>
+            Angle
+            <input id="angle" type="range" min="5" max="85" value="45" />
+            <span id="angleValue">45</span>
+          </label>
+          <label>
+            Power
+            <input id="power" type="range" min="20" max="100" value="60" />
+            <span id="powerValue">60</span>
+          </label>
+          <button id="fireButton" type="button">Fire</button>
+        </section>
+      </div>
+
+      <p class="hint">Three phones can join on the same Wi-Fi. Movement is limited each turn.</p>
+    </main>
+
+    <script src="game.js?v=20260616-super-tank"></script>
+  </body>
+</html>

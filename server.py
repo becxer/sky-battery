@@ -1,0 +1,1188 @@
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+from queue import Queue
+from pathlib import Path
+import json
+import math
+import random
+import threading
+import time
+
+ROOT = Path(__file__).parent
+W = 1200
+H = 540
+MIN_PLAYERS = 1
+MAX_PLAYERS = 6
+DEFAULT_PLAYER_COUNT = 3
+PLAYER_COUNT = DEFAULT_PLAYER_COUNT
+TANK_GROUND_OFFSET = 7
+TANK_EDGE_MARGIN = 20
+TANK_FIRE_DISTANCE = 19
+TANK_MUZZLE_Y = 8
+TANK_CONTACT_RADIUS = 12
+TANK_SLOPE_SAMPLE = 18
+TANK_MAX_BODY_ANGLE = math.radians(28)
+PLATFORM_ATTACH_STEP = 12
+MOVE_LIMIT = 150
+MOVE_STEP = 7.5
+MAX_CLIMB_STEP = 34
+PLAYER_GRAVITY = 1800
+PROJECTILE_GRAVITY = 1600
+PROJECTILE_POWER_SCALE = 12.5
+WIND_FORCE = 42
+GROUND_MIN_Y = 225
+GROUND_CONTROL_CLEARANCE = 215
+GROUND_MAX_Y = H - GROUND_CONTROL_CLEARANCE
+MIN_PLATFORM_AIR_GAP = 10
+STRIP_RENDER_STEP = 4
+ISLAND_RENDER_STEP = 5
+STRIP_PLATFORM_EXTRA = 8
+ISLAND_PLATFORM_EXTRA = 5
+EXPLOSION_MIN_RADIUS = 16
+EXPLOSION_MAX_RADIUS = 28
+EXPLOSION_SPEED_SCALE = 0.014
+EXPLOSION_PLATFORM_SCALE = 1.08
+EXPLOSION_DAMAGE_SCALE = 1.32
+HOMING_LOCK_RADIUS = 260
+HOMING_DESCENT_MIN_VY = 80
+HOMING_TURN_RATE = math.radians(320)
+HOMING_MIN_SPEED = 330
+ARTILLERY_MIN_DAMAGE = 0.72
+ARTILLERY_MAX_DAMAGE = 1.55
+ARTILLERY_MIN_RADIUS = 0.5
+ARTILLERY_MAX_RADIUS = 3.0
+ARTILLERY_GROW_START = 0.35
+ARTILLERY_GROW_DURATION = 2.65
+TANK_TYPES = {
+    "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
+    "multi": {"label": "Triple", "damage": 0.75, "radius": 0.82, "shots": [-3, 0, 3], "barrels": [-6, 0, 6]},
+    "red": {"label": "Red Core", "damage": 1.0, "baseDamage": 80, "radius": 0.45, "shots": [0], "barrels": [0]},
+    "missile": {"label": "Seeker", "damage": 0.2, "radius": 0.92, "shots": [0], "barrels": [0], "homing": True},
+    "artillery": {"label": "Howitzer", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "artillery": True},
+    "super": {
+        "label": "Super",
+        "damage": 0.22,
+        "radius": 0.78,
+        "shots": [-8, -4, 0, 4, 8],
+        "barrels": [-14, -7, 0, 7, 14],
+        "homing": True,
+        "shotColors": ["#ff3030", "#ff9f1a", "#ffe23f", "#39ff14", "#4aa3ff"],
+    },
+}
+TANK_TYPE_KEYS = list(TANK_TYPES.keys())
+TANK_TYPE_WEIGHTS = {
+    "normal": 24,
+    "multi": 24,
+    "red": 24,
+    "missile": 24,
+    "artillery": 24,
+    "super": 1,
+}
+
+lock = threading.RLock()
+clients = {}
+listeners = {}
+sounds = []
+
+
+def random_sky_mode():
+    return random.choice(["day", "evening"])
+
+
+def clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+def player_count():
+    return int(state.get("playerCount", DEFAULT_PLAYER_COUNT))
+
+
+def build_terrain():
+    base = random.randint(GROUND_MAX_Y - 78, GROUND_MAX_Y - 26)
+    profile = random.choice(["rolling", "valley", "peaks", "jagged"])
+    phase_a = random.random() * math.pi * 2
+    phase_b = random.random() * math.pi * 2
+    phase_c = random.random() * math.pi * 2
+    ground = []
+    for x in range(W):
+        if profile == "rolling":
+            y = base + math.sin(x * 0.006 + phase_a) * 46 + math.sin(x * 0.017 + phase_b) * 20
+        elif profile == "valley":
+            center = W * random.uniform(0.35, 0.65)
+            bowl = 62 * math.exp(-((x - center) ** 2) / (2 * 190 ** 2))
+            y = base + bowl + math.sin(x * 0.011 + phase_a) * 28
+        elif profile == "peaks":
+            y = base + math.sin(x * 0.004 + phase_a) * 70 - abs(math.sin(x * 0.014 + phase_b)) * 34
+        else:
+            y = base + math.sin(x * 0.009 + phase_a) * 38 + math.sin(x * 0.031 + phase_b) * 17 + math.sin(x * 0.057 + phase_c) * 8
+        ground.append(round(clamp(y, GROUND_MIN_Y, GROUND_MAX_Y)))
+    return smooth_ground(ground)
+
+
+def smooth_ground(ground):
+    smoothed = ground[:]
+    for _ in range(2):
+        next_ground = smoothed[:]
+        for x in range(2, W - 2):
+            window = smoothed[x - 2:x + 3]
+            next_ground[x] = round(sum(window) / len(window))
+        smoothed = next_ground
+    return smoothed
+
+
+def build_platforms(ground):
+    platforms = []
+    count = random.choice([0, 1, 1, 2, 2, 3])
+    for _ in range(count):
+        kind = random.choice(["thin", "steps", "island"])
+        x = random.randint(120, W - 360)
+        width = random.randint(130, 300)
+        y = random.randint(215, 365)
+        ground_gap = min(ground[int(clamp(x + width * t / 4, 0, W - 1))] for t in range(5)) - y
+        if ground_gap < 82:
+            y -= 82 - ground_gap
+        if kind == "thin":
+            platforms.append(make_platform_strip(x, y, width, random.randint(5, 9)))
+        elif kind == "steps":
+            step_count = random.randint(3, 5)
+            step_w = width / step_count
+            direction = random.choice([-1, 1])
+            steps = []
+            for i in range(step_count):
+                steps.append(make_platform_strip(
+                    round(x + i * step_w),
+                    round(y + direction * i * random.randint(13, 21)),
+                    round(step_w + 2),
+                    random.randint(6, 10),
+                ))
+            platforms.append({"type": "steps", "steps": steps})
+        else:
+            points = []
+            segments = random.randint(5, 8)
+            for i in range(segments + 1):
+                px = round(x + width * i / segments)
+                py = round(y + math.sin(i * 1.7 + random.random()) * 12 + random.randint(-7, 7))
+                points.append([px, py])
+            platforms.append({"type": "island", "points": points, "h": random.randint(7, 12)})
+    return platforms
+
+
+def make_platform_strip(x, y, w, h):
+    return {"type": "thin", "x": x, "y": y, "w": w, "h": h, "craters": []}
+
+
+def install_platforms(platforms):
+    state["platformMask"] = state["platformGround"][:]
+    visible = []
+    for platform in sorted(platforms, key=platform_sort_y):
+        if platform_is_visible(platform):
+            visible.append(platform)
+            add_platform_to_mask(platform)
+    return visible
+
+
+def platform_sort_y(platform):
+    if platform["type"] == "thin":
+        return platform["y"]
+    if platform["type"] == "steps":
+        return min(step["y"] for step in platform["steps"])
+    if platform["type"] == "island":
+        return min(p[1] for p in platform["points"])
+    return H
+
+
+def add_platform_to_mask(platform):
+    if platform["type"] == "thin":
+        add_strip_to_mask(platform)
+    elif platform["type"] == "steps":
+        for step in platform["steps"]:
+            add_strip_to_mask(step)
+    elif platform["type"] == "island":
+        min_x = round(min(p[0] for p in platform["points"]))
+        max_x = round(max(p[0] for p in platform["points"]))
+        for x in range(min_x, max_x + 1):
+            surface = island_surface_y(platform, x)
+            if surface is None or not platform_point_is_exposed(surface, x):
+                continue
+            i = int(clamp(round(x), 0, W - 1))
+            state["platformMask"][i] = min(state["platformMask"][i], round(surface + platform.get("h", 10) + ISLAND_PLATFORM_EXTRA))
+
+
+def add_strip_to_mask(platform):
+    for start, end in platform_strip_render_runs(platform):
+        for x in range(round(start), round(end) + 1):
+            i = int(clamp(round(x), 0, W - 1))
+            state["platformMask"][i] = min(state["platformMask"][i], round(platform["y"] + platform["h"] + STRIP_PLATFORM_EXTRA))
+
+
+def terrain_y(x):
+    i = int(clamp(round(x), 0, W - 1))
+    return state["ground"][i]
+
+
+def platform_y_at(x):
+    best = None
+    for platform in state.get("platforms", []):
+        if platform["type"] == "thin":
+            if platform_strip_drawn_at(platform, x):
+                y = platform_surface_y(platform, x)
+                if y is not None and platform_point_is_exposed(y, x):
+                    best = y if best is None else min(best, y)
+        elif platform["type"] == "steps":
+            for step in platform["steps"]:
+                if platform_strip_drawn_at(step, x):
+                    y = platform_surface_y(step, x)
+                    if y is not None and platform_point_is_exposed(y, x):
+                        best = y if best is None else min(best, y)
+        elif platform["type"] == "island":
+            y = island_surface_y(platform, x)
+            if y is not None and island_drawn_at(platform, x):
+                best = y if best is None else min(best, y)
+    return best
+
+
+def platform_surface_y(platform, x):
+    if not platform_has_support_width(platform, x):
+        return None
+    y = platform["y"]
+    for crater in platform.get("craters", []):
+        dx = x - crater["x"]
+        radius = crater["r"]
+        if abs(dx) <= radius:
+            y = max(y, crater["y"] + math.sqrt(max(0, radius * radius - dx * dx)))
+    if y > platform["y"] + platform["h"] + STRIP_PLATFORM_EXTRA:
+        return None
+    return y
+
+
+def platform_has_support_width(platform, x):
+    left = max(platform["x"], x - 12)
+    right = min(platform["x"] + platform["w"], x + 12)
+    solid_columns = 0
+    sample_count = 0
+    for sx in range(round(left), round(right) + 1, 4):
+        sample_count += 1
+        y = platform["y"]
+        for crater in platform.get("craters", []):
+            dx = sx - crater["x"]
+            radius = crater["r"]
+            if abs(dx) <= radius:
+                y = max(y, crater["y"] + math.sqrt(max(0, radius * radius - dx * dx)))
+        if y <= platform["y"] + platform["h"] + STRIP_PLATFORM_EXTRA:
+            solid_columns += 1
+    return sample_count > 0 and solid_columns >= max(2, math.ceil(sample_count * 0.45))
+
+
+def point_hits_platform(platform, x, y):
+    if platform["type"] == "thin":
+        return point_hits_platform_strip(platform, x, y)
+    if platform["type"] == "steps":
+        return any(point_hits_platform_strip(step, x, y) for step in platform["steps"])
+    if platform["type"] == "island":
+        return point_hits_island(platform, x, y)
+    return False
+
+
+def point_hits_platform_strip(platform, x, y):
+    if not platform_strip_drawn_at(platform, x):
+        return False
+    surface_y = platform_surface_y(platform, x)
+    if surface_y is None:
+        return False
+    if not platform_point_is_exposed(surface_y, x):
+        return False
+    bottom_y = platform["y"] + platform["h"] + STRIP_PLATFORM_EXTRA
+    return surface_y <= y <= bottom_y
+
+
+def point_hits_island(platform, x, y):
+    surface = island_surface_y(platform, x)
+    if surface is None:
+        return False
+    if not island_drawn_at(platform, x):
+        return False
+    return surface <= y <= surface + platform.get("h", 10) + ISLAND_PLATFORM_EXTRA
+
+
+def solid_at(x, y):
+    if y >= terrain_y(x):
+        return True
+    return any(point_hits_platform(platform, x, y) for platform in state.get("platforms", []))
+
+
+def platform_is_visible(platform):
+    if platform["type"] == "thin":
+        return platform_strip_visible(platform)
+    if platform["type"] == "steps":
+        return any(platform_strip_visible(step) for step in platform["steps"])
+    if platform["type"] == "island":
+        return island_visible(platform)
+    return False
+
+
+def platform_strip_visible(platform):
+    return any(end - start >= STRIP_RENDER_STEP for start, end in platform_strip_render_runs(platform))
+
+
+def platform_strip_render_runs(platform):
+    offsets = render_offsets(platform["w"], STRIP_RENDER_STEP)
+    runs = []
+    run_start = None
+    previous_x = None
+    for index, offset in enumerate(offsets):
+        sample_x = platform["x"] + offset
+        surface = platform_surface_y(platform, sample_x)
+        solid = surface is not None and platform_point_is_exposed(surface, sample_x)
+        at_end = index == len(offsets) - 1
+        if solid and run_start is None:
+            run_start = sample_x
+        if ((not solid) or at_end) and run_start is not None:
+            end = sample_x if solid and at_end else previous_x
+            if end is not None and end - run_start >= STRIP_RENDER_STEP:
+                runs.append((run_start, end))
+            run_start = None
+        previous_x = sample_x
+    return runs
+
+
+def platform_strip_drawn_at(platform, x):
+    if not (platform["x"] <= x <= platform["x"] + platform["w"]):
+        return False
+    return any(start <= x <= end for start, end in platform_strip_render_runs(platform))
+
+
+def render_offsets(width, step):
+    width = round(width)
+    offsets = list(range(0, width + 1, step))
+    if not offsets or offsets[-1] != width:
+        offsets.append(width)
+    return offsets
+
+
+def island_visible(platform):
+    points = platform["points"]
+    if len(points) < 2 or max(p[0] for p in points) - min(p[0] for p in points) < 36:
+        return False
+    min_x = round(min(p[0] for p in points))
+    max_x = round(max(p[0] for p in points))
+    exposed_columns = 0
+    for sx in range(min_x, max_x + 1, ISLAND_RENDER_STEP):
+        if island_drawn_at(platform, sx):
+            exposed_columns += 1
+    return exposed_columns >= 4
+
+
+def island_surface_y(platform, x):
+    points = platform["points"]
+    min_x = min(p[0] for p in points)
+    max_x = max(p[0] for p in points)
+    if not (min_x <= x <= max_x):
+        return None
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        if min(x1, x2) <= x <= max(x1, x2):
+            span = max(1, x2 - x1)
+            t = (x - x1) / span
+            return y1 + (y2 - y1) * t
+    return None
+
+
+def island_drawn_at(platform, x):
+    points = platform["points"]
+    min_x = round(min(p[0] for p in points))
+    max_x = round(max(p[0] for p in points))
+    if not (min_x <= x <= max_x):
+        return False
+    segment_start = min_x + math.floor((x - min_x) / ISLAND_RENDER_STEP) * ISLAND_RENDER_STEP
+    segment_end = min(segment_start + ISLAND_RENDER_STEP, max_x)
+    y1 = island_surface_y(platform, segment_start)
+    y2 = island_surface_y(platform, segment_end)
+    if y1 is None or y2 is None:
+        return False
+    return platform_point_is_exposed(y1, segment_start) or platform_point_is_exposed(y2, segment_end)
+
+
+def platform_point_is_exposed(surface_y, x):
+    i = int(clamp(round(x), 0, W - 1))
+    mask = state.get("platformMask") or state.get("platformGround") or state["ground"]
+    return surface_y < mask[i] - MIN_PLATFORM_AIR_GAP
+
+
+def floor_y(x):
+    platform_y = platform_y_at(x)
+    ground_y = terrain_y(x)
+    return min(ground_y, platform_y) if platform_y is not None else ground_y
+
+
+def supported_floor_y(x, current_y=None):
+    ground_y = terrain_y(x)
+    platform_y = platform_y_at(x)
+    if platform_y is None:
+        return ground_y
+    if current_y is not None and platform_y < current_y + TANK_GROUND_OFFSET - PLATFORM_ATTACH_STEP:
+        return ground_y
+    return min(ground_y, platform_y)
+
+
+def ground_angle_at(x, current_y=None):
+    left_x = clamp(x - TANK_SLOPE_SAMPLE, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    right_x = clamp(x + TANK_SLOPE_SAMPLE, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    left_y = supported_floor_y(left_x, current_y)
+    right_y = supported_floor_y(right_x, current_y)
+    angle = math.atan2(right_y - left_y, right_x - left_x)
+    return clamp(angle, -TANK_MAX_BODY_ANGLE, TANK_MAX_BODY_ANGLE)
+
+
+def barrel_angle_for(player):
+    aim = math.radians(player["aim"])
+    local_angle = -aim if player["dir"] == 1 else math.pi + aim
+    return player["angleBody"] + local_angle
+
+
+def tank_spec(player):
+    return TANK_TYPES.get(player.get("tankType", "normal"), TANK_TYPES["normal"])
+
+
+def random_tank_type():
+    return random.choices(TANK_TYPE_KEYS, weights=[TANK_TYPE_WEIGHTS.get(key, 1) for key in TANK_TYPE_KEYS], k=1)[0]
+
+
+def artillery_flight_factor(age):
+    return clamp((age - ARTILLERY_GROW_START) / ARTILLERY_GROW_DURATION, 0, 1)
+
+
+def artillery_damage_multiplier_for_age(age):
+    return ARTILLERY_MIN_DAMAGE + (ARTILLERY_MAX_DAMAGE - ARTILLERY_MIN_DAMAGE) * artillery_flight_factor(age)
+
+
+def artillery_radius_multiplier_for_age(age):
+    return ARTILLERY_MIN_RADIUS + (ARTILLERY_MAX_RADIUS - ARTILLERY_MIN_RADIUS) * artillery_flight_factor(age)
+
+
+def projectile_effect_multipliers(projectile):
+    damage = projectile.get("damageMultiplier", 1.0)
+    radius = projectile.get("radiusMultiplier", 1.0)
+    base_damage = projectile.get("baseDamage")
+    if projectile.get("tankType") == "artillery":
+        age = projectile.get("age", 0)
+        damage *= artillery_damage_multiplier_for_age(age)
+        radius *= artillery_radius_multiplier_for_age(age)
+    return damage, radius, base_damage
+
+
+def sync_projectile_field():
+    projectiles = state.get("projectiles", [])
+    state["projectile"] = projectiles[0] if projectiles else None
+
+
+def active_projectiles():
+    return bool(state.get("projectiles") or state.get("projectile"))
+
+
+def set_projectiles(projectiles):
+    state["projectiles"] = projectiles
+    sync_projectile_field()
+
+
+def resolve_shot_end():
+    alive = [i for i, p in enumerate(state["players"]) if p["health"] > 0]
+    if player_count() == 1:
+        state["winner"] = None
+        next_turn()
+    elif len(alive) == 1:
+        state["winner"] = alive[0]
+    elif len(alive) == 0:
+        state["winner"] = state["current"]
+    else:
+        next_turn()
+
+
+def projectile_surface_hit(x, previous_y, current_y):
+    top_y = min(previous_y, current_y)
+    bottom_y = max(previous_y, current_y)
+    candidates = []
+    ground_y = terrain_y(x)
+    if top_y <= ground_y <= bottom_y:
+        candidates.append(ground_y)
+    platform_y = platform_y_at(x)
+    if platform_y is not None and top_y <= platform_y <= bottom_y:
+        candidates.append(platform_y)
+    return min(candidates) if candidates else None
+
+
+def projectile_path_hit(previous_x, previous_y, current_x, current_y):
+    distance = math.hypot(current_x - previous_x, current_y - previous_y)
+    steps = max(2, math.ceil(distance / 2))
+    last_x = previous_x
+    last_y = previous_y
+    for i in range(1, steps + 1):
+        t = i / steps
+        x = previous_x + (current_x - previous_x) * t
+        y = previous_y + (current_y - previous_y) * t
+        if solid_at(x, y):
+            return x, y
+        hit_y = projectile_surface_hit(x, last_y, y)
+        if hit_y is not None:
+            return x, hit_y
+        last_x = x
+        last_y = y
+    return None
+
+
+def random_positions(count=None):
+    count = count or player_count()
+    slots = list(range(90, W - 89, 70))
+    for minimum_gap in [220, 180, 140, 100, 70]:
+        random.shuffle(slots)
+        chosen = []
+        for x in slots:
+            if all(abs(x - other) >= minimum_gap for other in chosen):
+                chosen.append(x)
+            if len(chosen) == count:
+                random.shuffle(chosen)
+                return chosen
+    random.shuffle(slots)
+    return slots[:count]
+
+
+def spawn_y(x):
+    return terrain_y(x) - TANK_GROUND_OFFSET
+
+
+def has_support(player):
+    support = terrain_y(player["x"])
+    return abs((player["y"] + TANK_GROUND_OFFSET) - support) <= 3
+
+
+def safe_spawn_x(exclude=None):
+    exclude = exclude or []
+    candidates = list(range(120, W - 119, 40))
+    random.shuffle(candidates)
+    for x in candidates:
+        if all(abs(x - other) >= 160 for other in exclude):
+            return x
+    return random.choice(candidates)
+
+
+def validate_spawns():
+    placed = []
+    for player in state["players"]:
+        if not has_support(player):
+            player["x"] = safe_spawn_x(placed)
+            player["y"] = spawn_y(player["x"])
+            player["vx"] = 0
+            player["vy"] = 0
+        player["angleBody"] = ground_angle_at(player["x"], player["y"])
+        placed.append(player["x"])
+
+
+def make_player(index, x):
+    colors = ["#5fb8ff", "#ff9167", "#73d38a", "#f5d76e", "#c58cff", "#65e0d5"]
+    return {
+        "name": f"Player {index + 1}",
+        "tankType": random_tank_type(),
+        "x": x,
+        "y": spawn_y(x),
+        "vx": 0,
+        "vy": 0,
+        "angleBody": ground_angle_at(x),
+        "av": 0,
+        "health": 100,
+        "color": colors[index % len(colors)],
+        "dir": 1 if x < W / 2 else -1,
+        "aim": 45,
+        "power": 66,
+        "moveRemaining": MOVE_LIMIT,
+    }
+
+
+state = {
+    "ground": build_terrain(),
+    "platformGround": [],
+    "platformMask": [],
+    "platforms": [],
+    "players": [],
+    "playerCount": DEFAULT_PLAYER_COUNT,
+    "phase": "setup",
+    "worldVersion": 0,
+    "current": 0,
+    "projectile": None,
+    "projectiles": [],
+    "particles": [],
+    "wind": 0,
+    "skyMode": random_sky_mode(),
+    "winner": None,
+    "tick": 0,
+}
+state["platformGround"] = state["ground"][:]
+state["platforms"] = install_platforms(build_platforms(state["ground"]))
+state["players"] = [make_player(i, x) for i, x in enumerate(random_positions(DEFAULT_PLAYER_COUNT))]
+validate_spawns()
+state["current"] = random.randrange(PLAYER_COUNT)
+state["wind"] = round(random.uniform(-2.8, 2.8), 2)
+
+
+def reset_game(count=None, kick_clients=False, phase="playing"):
+    if count is not None:
+        state["playerCount"] = int(clamp(int(count), MIN_PLAYERS, MAX_PLAYERS))
+    state["ground"] = build_terrain()
+    state["platformGround"] = state["ground"][:]
+    state["platforms"] = install_platforms(build_platforms(state["ground"]))
+    state["players"] = [make_player(i, x) for i, x in enumerate(random_positions(player_count()))]
+    validate_spawns()
+    if kick_clients:
+        clients.clear()
+    for cid, client in clients.items():
+        if client["seat"] in range(player_count()):
+            state["players"][client["seat"]]["name"] = client["name"]
+    state["current"] = random.randrange(player_count())
+    set_projectiles([])
+    state["particles"] = []
+    state["wind"] = round(random.uniform(-2.8, 2.8), 2)
+    state["skyMode"] = random_sky_mode()
+    state["winner"] = None
+    state["phase"] = phase
+    state["worldVersion"] += 1
+    sounds.append("join")
+
+
+def recreate_world():
+    clients.clear()
+    state["phase"] = "setup"
+    set_projectiles([])
+    state["particles"] = []
+    state["winner"] = None
+    state["worldVersion"] += 1
+    sounds.append("join")
+
+
+def assign_seat(client_id, name):
+    if state["phase"] != "playing":
+        clients[client_id] = {"name": name, "seat": player_count(), "last": time.time()}
+        return player_count()
+    existing = clients.get(client_id)
+    if existing:
+        existing["name"] = name
+        if existing["seat"] in range(player_count()):
+            state["players"][existing["seat"]]["name"] = name
+        return existing["seat"]
+
+    taken = {c["seat"] for c in clients.values()}
+    count = player_count()
+    seat = next((i for i in range(count) if i not in taken), count)
+    clients[client_id] = {"name": name, "seat": seat, "last": time.time()}
+    if seat in range(count):
+        state["players"][seat]["name"] = name
+    sounds.append("join")
+    return seat
+
+
+def next_turn():
+    alive = [i for i, p in enumerate(state["players"]) if p["health"] > 0]
+    if player_count() == 1:
+        state["current"] = 0
+        state["players"][0]["moveRemaining"] = MOVE_LIMIT
+        state["wind"] = round(random.uniform(-2.8, 2.8), 2)
+        return
+    if len(alive) == 1:
+        state["winner"] = alive[0]
+        return
+    if len(alive) == 0:
+        state["winner"] = state["current"]
+        return
+    count = player_count()
+    for step in range(1, count + 1):
+        candidate = (state["current"] + step) % count
+        if state["players"][candidate]["health"] > 0:
+            state["current"] = candidate
+            state["players"][candidate]["moveRemaining"] = MOVE_LIMIT
+            state["wind"] = round(random.uniform(-2.8, 2.8), 2)
+            return
+
+
+def fire_for(client_id):
+    client = clients.get(client_id)
+    if state["phase"] != "playing" or not client or client["seat"] != state["current"] or active_projectiles() or state["winner"] is not None:
+        return
+    player = state["players"][state["current"]]
+    spec = tank_spec(player)
+    base_angle = barrel_angle_for(player)
+    power = player["power"] * PROJECTILE_POWER_SCALE
+    damage = spec["damage"]
+    radius = spec["radius"]
+    shot_colors = spec.get("shotColors", [])
+    projectiles = []
+    for shot_index, (shot_offset, barrel_offset) in enumerate(zip(spec["shots"], spec["barrels"])):
+        angle = base_angle + math.radians(shot_offset)
+        offset_x = -math.sin(angle) * barrel_offset
+        offset_y = math.cos(angle) * barrel_offset
+        projectiles.append({
+            "x": player["x"] + math.cos(angle) * TANK_FIRE_DISTANCE + offset_x,
+            "y": player["y"] - TANK_MUZZLE_Y + math.sin(angle) * TANK_FIRE_DISTANCE + offset_y,
+            "vx": math.cos(angle) * power + player["vx"] * 0.25,
+            "vy": math.sin(angle) * power + player["vy"] * 0.08,
+            "angle": 0,
+            "av": player["dir"] * 0.24,
+            "age": 0,
+            "owner": state["current"],
+            "tankType": player.get("tankType", "normal"),
+            "shotIndex": shot_index,
+            "shotColor": shot_colors[shot_index % len(shot_colors)] if shot_colors else None,
+            "shotAim": player["aim"],
+            "damageMultiplier": damage,
+            "baseDamage": spec.get("baseDamage"),
+            "radiusMultiplier": radius,
+            "homing": bool(spec.get("homing")),
+            "locked": False,
+        })
+    set_projectiles(projectiles)
+    sounds.append("fire")
+
+
+def move_for(client_id, direction):
+    client = clients.get(client_id)
+    if state["phase"] != "playing" or not client or client["seat"] != state["current"] or active_projectiles() or state["winner"] is not None:
+        return
+    player = state["players"][state["current"]]
+    direction = -1 if float(direction) < 0 else 1
+    player["dir"] = direction
+    if player["moveRemaining"] <= 0:
+        return
+    distance = min(MOVE_STEP, player["moveRemaining"])
+    next_x = clamp(player["x"] + direction * distance, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    if not can_move_to(player["x"], next_x, player["y"]):
+        return
+    next_ground = supported_floor_y(next_x, player["y"])
+    player["x"] = next_x
+    if next_ground <= player["y"] + TANK_GROUND_OFFSET:
+        player["y"] = next_ground - TANK_GROUND_OFFSET
+    player["angleBody"] = ground_angle_at(player["x"], player["y"])
+    player["vx"] = 0
+    player["moveRemaining"] = max(0, player["moveRemaining"] - distance)
+    sounds.append("move")
+
+
+def can_move_to(start_x, end_x, current_y=None):
+    distance = end_x - start_x
+    steps = max(2, math.ceil(abs(distance) / 8))
+    previous_y = supported_floor_y(start_x, current_y)
+    for i in range(1, steps + 1):
+        x = start_x + distance * i / steps
+        body_y = previous_y - TANK_GROUND_OFFSET
+        y = supported_floor_y(x, body_y)
+        if previous_y - y > MAX_CLIMB_STEP:
+            return False
+        previous_y = y
+    return True
+
+
+def carve_crater(x, y, radius):
+    start = max(0, round(x - radius))
+    end = min(W, round(x + radius))
+    for i in range(start, end):
+        dx = i - x
+        carve = math.sqrt(max(0, radius * radius - dx * dx))
+        state["ground"][i] = max(state["ground"][i], round(y + carve))
+
+
+def damage_platforms(x, y, radius):
+    remaining = []
+    for platform in state.get("platforms", []):
+        if not platform_is_visible(platform):
+            continue
+        if platform["type"] == "thin":
+            damaged = crater_platform_strip(platform, x, y, radius)
+            if damaged and platform_is_visible(damaged):
+                remaining.append(damaged)
+        elif platform["type"] == "steps":
+            steps = []
+            for step in platform["steps"]:
+                damaged = crater_platform_strip(step, x, y, radius)
+                if damaged and platform_strip_visible(damaged):
+                    steps.append(damaged)
+            if steps:
+                remaining.append({"type": "steps", "steps": steps})
+        elif platform["type"] == "island":
+            damaged = damage_island(platform, x, y, radius)
+            remaining.extend(piece for piece in damaged if platform_is_visible(piece))
+    state["platforms"] = remaining
+
+
+def crater_platform_strip(platform, x, y, radius):
+    px = platform["x"]
+    py = platform["y"]
+    pw = platform["w"]
+    ph = platform["h"]
+    closest_x = clamp(x, px, px + pw)
+    closest_y = clamp(y, py, py + ph + STRIP_PLATFORM_EXTRA)
+    if math.hypot(closest_x - x, closest_y - y) > radius:
+        return platform
+    craters = platform.get("craters", []) + [{"x": x, "y": y, "r": radius}]
+    remaining_columns = 0
+    damaged_platform = {**platform, "craters": craters}
+    for start, end in platform_strip_render_runs(damaged_platform):
+        remaining_columns += max(0, round(end - start))
+    if remaining_columns < 5:
+        return None
+    return {**platform, "craters": craters}
+
+
+def damage_island(platform, x, y, radius):
+    points = platform["points"]
+    min_x = min(p[0] for p in points)
+    max_x = max(p[0] for p in points)
+    avg_y = sum(p[1] for p in points) / len(points)
+    closest_x = clamp(x, min_x, max_x)
+    closest_y = clamp(y, avg_y - 8, avg_y + platform.get("h", 10) + ISLAND_PLATFORM_EXTRA + 6)
+    if math.hypot(closest_x - x, closest_y - y) > radius:
+        return [platform]
+
+    left_limit = x - radius
+    right_limit = x + radius
+    left_points = [p for p in points if p[0] < left_limit]
+    right_points = [p for p in points if p[0] > right_limit]
+    pieces = []
+    if len(left_points) >= 2 and left_points[-1][0] - left_points[0][0] >= 36:
+        pieces.append({"type": "island", "points": left_points, "h": platform.get("h", 10)})
+    if len(right_points) >= 2 and right_points[-1][0] - right_points[0][0] >= 36:
+        pieces.append({"type": "island", "points": right_points, "h": platform.get("h", 10)})
+    return pieces
+
+
+def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, base_damage=None, advance_turn=True):
+    base_radius = clamp(14 + impact_speed * EXPLOSION_SPEED_SCALE, EXPLOSION_MIN_RADIUS, EXPLOSION_MAX_RADIUS)
+    radius_cap = EXPLOSION_MAX_RADIUS * max(1.0, radius_multiplier)
+    radius = clamp(base_radius * radius_multiplier, 8, radius_cap)
+    carve_crater(x, y, radius)
+    damage_platforms(x, y, radius * EXPLOSION_PLATFORM_SCALE)
+    hit = False
+    retired = False
+    for player in state["players"]:
+        if player["health"] <= 0:
+            continue
+        dx = player["x"] - x
+        dy = player["y"] - y
+        distance = math.hypot(dx, dy)
+        damage_radius = radius * EXPLOSION_DAMAGE_SCALE
+        if distance < damage_radius:
+            falloff = 1 - distance / damage_radius
+            if base_damage is not None:
+                damage = round(base_damage * damage_multiplier)
+            else:
+                damage = round(falloff * (36 + impact_speed * 0.032) * damage_multiplier)
+            player["health"] -= damage
+            if player["health"] <= 0:
+                player["health"] = 0
+                retired = True
+            player["vx"] += (dx / max(distance, 1)) * falloff * 9
+            player["vy"] += (dy / max(distance, 1)) * falloff * 9 - falloff * 8
+            player["av"] += falloff * player["dir"] * 0.12
+            hit = True
+
+    particle_scale = clamp(radius / EXPLOSION_MAX_RADIUS, 0.5, 3.0)
+    particle_count = round(36 * clamp(particle_scale, 0.7, 2.4))
+    particle_life = round(28 + particle_scale * 10)
+    for _ in range(particle_count):
+        speed = (random.random() * 3.6 + 0.9) * (0.78 + particle_scale * 0.24)
+        angle = random.random() * math.pi * 2
+        state["particles"].append({
+            "x": x,
+            "y": y,
+            "vx": math.cos(angle) * speed,
+            "vy": math.sin(angle) * speed - 0.9,
+            "life": particle_life,
+            "maxLife": particle_life,
+            "size": (random.random() * 2.4 + 1.2) * (0.78 + particle_scale * 0.28),
+        })
+
+    sounds.append("explode")
+    if hit:
+        sounds.append("damage")
+    if retired:
+        sounds.append("retire")
+
+    if advance_turn:
+        set_projectiles([])
+        resolve_shot_end()
+
+
+def update_player(player, dt):
+    floor = supported_floor_y(player["x"], player["y"]) - TANK_GROUND_OFFSET
+    player["vy"] += PLAYER_GRAVITY * dt
+    player["x"] += player["vx"] * dt
+    player["y"] += player["vy"] * dt
+    player["angleBody"] += player["av"] * dt
+    player["vx"] *= 0.975
+    player["av"] *= 0.965
+    player["x"] = clamp(player["x"], TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    if player["y"] > floor:
+        player["y"] = floor
+        player["vy"] = 0
+        player["vx"] *= 0.5
+        target_angle = ground_angle_at(player["x"], player["y"])
+        player["angleBody"] += (target_angle - player["angleBody"]) * 0.35
+        player["av"] *= 0.35
+    if player["y"] > H + 80 and player["health"] > 0:
+        player["health"] = 0
+        sounds.append("retire")
+
+
+def angle_delta(target, current):
+    return (target - current + math.pi) % (math.pi * 2) - math.pi
+
+
+def steer_homing_projectile(p, dt):
+    if not p.get("homing") or p["age"] < 0.25 or p["vy"] < HOMING_DESCENT_MIN_VY:
+        return
+    was_locked = bool(p.get("locked"))
+    owner = p.get("owner")
+    candidates = []
+    for index, player in enumerate(state["players"]):
+        if index == owner or player["health"] <= 0:
+            continue
+        target_x = player["x"]
+        target_y = player["y"] - 8
+        distance = math.hypot(target_x - p["x"], target_y - p["y"])
+        if distance <= HOMING_LOCK_RADIUS:
+            candidates.append((distance, target_x, target_y))
+    if not candidates:
+        return
+    _, target_x, target_y = min(candidates, key=lambda item: item[0])
+    speed = max(HOMING_MIN_SPEED, math.hypot(p["vx"], p["vy"]) * 1.006)
+    current = math.atan2(p["vy"], p["vx"])
+    desired = math.atan2(target_y - p["y"], target_x - p["x"])
+    turn = clamp(angle_delta(desired, current), -HOMING_TURN_RATE * dt, HOMING_TURN_RATE * dt)
+    adjusted = current + turn
+    p["vx"] = math.cos(adjusted) * speed
+    p["vy"] = math.sin(adjusted) * speed
+    p["locked"] = True
+    if not was_locked:
+        sounds.append("lock")
+
+
+def update_projectiles(dt):
+    projectiles = state.get("projectiles", [])
+    if not projectiles:
+        sync_projectile_field()
+        return
+    survivors = []
+    exploded = False
+    for p in projectiles:
+        p["age"] += dt
+        previous_x = p["x"]
+        previous_y = p["y"]
+        steer_homing_projectile(p, dt)
+        p["vx"] += state["wind"] * WIND_FORCE * dt
+        p["vy"] += PROJECTILE_GRAVITY * dt
+        p["x"] += p["vx"] * dt
+        p["y"] += p["vy"] * dt
+        p["angle"] += p["av"] * dt * 10
+        speed = math.hypot(p["vx"], p["vy"])
+
+        if p["x"] < -40 or p["x"] > W + 40 or p["y"] > H + 60:
+            continue
+
+        hit = projectile_path_hit(previous_x, previous_y, p["x"], p["y"])
+        if hit is not None:
+            hit_x, hit_y = hit
+            damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
+            explode(
+                hit_x,
+                hit_y,
+                speed,
+                damage_multiplier,
+                radius_multiplier,
+                base_damage,
+                advance_turn=False,
+            )
+            exploded = True
+            continue
+
+        direct_hit = False
+        if p["age"] > 0.18:
+            for player in state["players"]:
+                if player["health"] <= 0:
+                    continue
+                if math.hypot(player["x"] - p["x"], player["y"] - p["y"]) < TANK_CONTACT_RADIUS:
+                    damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
+                    explode(
+                        p["x"],
+                        p["y"],
+                        speed + 18,
+                        damage_multiplier,
+                        radius_multiplier,
+                        base_damage,
+                        advance_turn=False,
+                    )
+                    exploded = True
+                    direct_hit = True
+                    break
+        if not direct_hit:
+            survivors.append(p)
+
+    set_projectiles(survivors)
+    if not survivors and state["winner"] is None:
+        resolve_shot_end()
+
+
+def update_particles():
+    next_particles = []
+    for p in state["particles"]:
+        p["x"] += p["vx"]
+        p["y"] += p["vy"]
+        p["vy"] += 0.1
+        p["life"] -= 1
+        if p["life"] > 0:
+            next_particles.append(p)
+    state["particles"] = next_particles[:120]
+
+
+def snapshot():
+    state["tick"] += 1
+    event_sounds = list(sounds)
+    sounds.clear()
+    state["platforms"] = [platform for platform in state["platforms"] if platform_is_visible(platform)]
+    return {
+        "ground": state["ground"],
+        "platformGround": state["platformGround"],
+        "platformMask": state["platformMask"],
+        "platforms": state["platforms"],
+        "players": [
+            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining")}
+            for p in state["players"]
+        ],
+        "playerCount": state["playerCount"],
+        "phase": state["phase"],
+        "worldVersion": state["worldVersion"],
+        "current": state["current"],
+        "projectile": state["projectile"],
+        "projectiles": state.get("projectiles", []),
+        "particles": state["particles"],
+        "wind": state["wind"],
+        "skyMode": state["skyMode"],
+        "winner": state["winner"],
+        "tick": state["tick"],
+        "sounds": event_sounds,
+    }
+
+
+def broadcast():
+    data = "event: state\ndata: " + json.dumps(snapshot(), separators=(",", ":")) + "\n\n"
+    dead = []
+    for client_id, queue in list(listeners.items()):
+        try:
+            queue.put_nowait(data)
+        except Exception:
+            dead.append(client_id)
+    for client_id in dead:
+        listeners.pop(client_id, None)
+
+
+def game_loop():
+    last_broadcast = 0
+    while True:
+        time.sleep(1 / 60)
+        with lock:
+            if state["phase"] == "playing" and state["winner"] is None:
+                for player in state["players"]:
+                    update_player(player, 1 / 60)
+                update_projectiles(1 / 60)
+            update_particles()
+            now = time.time()
+            if now - last_broadcast > 1 / 30:
+                broadcast()
+                last_broadcast = now
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        with lock:
+            if self.path == "/join":
+                name = "".join(ch for ch in str(body.get("name", "Player"))[:16] if ch.isalnum() or ch in " _-").strip() or "Player"
+                seat = assign_seat(str(body.get("id", "")), name)
+                self.send_json({"seat": seat, "phase": state["phase"], "worldVersion": state["worldVersion"]})
+            elif self.path == "/input":
+                client = clients.get(str(body.get("id", "")))
+                if state["phase"] == "playing" and client and client["seat"] in range(player_count()):
+                    player = state["players"][client["seat"]]
+                    player["aim"] = clamp(float(body.get("angle", player["aim"])), 5, 85)
+                    player["power"] = clamp(float(body.get("power", player["power"])), 20, 100)
+                self.send_json({"ok": True})
+            elif self.path == "/fire":
+                fire_for(str(body.get("id", "")))
+                self.send_json({"ok": True})
+            elif self.path == "/move":
+                move_for(str(body.get("id", "")), body.get("direction", 0))
+                self.send_json({"ok": True})
+            elif self.path == "/reset":
+                reset_game()
+                self.send_json({"ok": True})
+            elif self.path == "/host/start":
+                reset_game(count=body.get("count", player_count()), kick_clients=True, phase="playing")
+                self.send_json({"ok": True, "playerCount": player_count(), "worldVersion": state["worldVersion"]})
+            elif self.path == "/host/recreate":
+                recreate_world()
+                self.send_json({"ok": True, "phase": state["phase"], "worldVersion": state["worldVersion"]})
+            else:
+                self.send_error(404)
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
+    def do_GET(self):
+        if self.path.startswith("/state"):
+            with lock:
+                self.send_json(snapshot())
+            return
+        if self.path.startswith("/events"):
+            client_id = parse_qs(urlparse(self.path).query).get("id", [""])[0] or f"anonymous-{id(self)}"
+            queue = Queue()
+            with lock:
+                old_queue = listeners.get(client_id)
+                if old_queue is not None:
+                    old_queue.put_nowait(None)
+                listeners[client_id] = queue
+                queue.put("event: state\ndata: " + json.dumps(snapshot(), separators=(",", ":")) + "\n\n")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            try:
+                while True:
+                    message = queue.get()
+                    if message is None:
+                        break
+                    self.wfile.write(message.encode("utf-8"))
+                    self.wfile.flush()
+            except Exception:
+                pass
+            finally:
+                with lock:
+                    if listeners.get(client_id) is queue:
+                        listeners.pop(client_id, None)
+            return
+        super().do_GET()
+
+    def send_json(self, payload):
+        encoded = json.dumps(payload).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
+if __name__ == "__main__":
+    threading.Thread(target=game_loop, daemon=True).start()
+    server = ThreadingHTTPServer(("0.0.0.0", 4173), Handler)
+    print("Sky Battery server: http://0.0.0.0:4173", flush=True)
+    server.serve_forever()
