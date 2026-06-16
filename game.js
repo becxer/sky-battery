@@ -5,6 +5,8 @@ const loginOverlay = document.getElementById("loginOverlay");
 const loginForm = document.getElementById("loginForm");
 const nameInput = document.getElementById("nameInput");
 const loginError = document.getElementById("loginError");
+const loginTankChoice = document.getElementById("loginTankChoice");
+const tankTypeSelect = document.getElementById("tankTypeSelect");
 const angleInput = document.getElementById("angle");
 const powerInput = document.getElementById("power");
 const angleValue = document.getElementById("angleValue");
@@ -20,12 +22,19 @@ const H = canvas.height;
 const TANK_SCALE = 0.5;
 const STRIP_PLATFORM_EXTRA = 8;
 const ISLAND_PLATFORM_EXTRA = 5;
+const ARTILLERY_GROW_START = 0.15;
+const ARTILLERY_GROW_DURATION = 2.65;
 const TANK_TYPE_META = {
   normal: { label: "N", name: "노말 탱크", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
   multi: { label: "III", name: "멀티미사일", color: "#74d7ff", shell: "#1f252c", glow: "#ffcd6f" },
   red: { label: "R", name: "빨콩탱크", color: "#ff4848", shell: "#ff3030", glow: "#ff8674" },
   missile: { label: "M", name: "유도탄 탱크", color: "#39ff14", shell: "#39ff14", glow: "#baffee" },
   artillery: { label: "A", name: "자주포 탱크", color: "#f5d76e", shell: "#4b4f58", glow: "#ffe07a" },
+  laser: { label: "L", name: "레이저 탱크", color: "#5df6ff", shell: "#5df6ff", glow: "#d8ffff" },
+  chain: { label: "C", name: "3쿠션 체인", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
+  poop: { label: "P", name: "똥탱크", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
+  nuke: { label: "X", name: "핵폭탄 탱크", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
+  cruise: { label: "V", name: "순항미사일", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
   super: { label: "S", name: "슈퍼탱크", color: "#ffe23f", shell: "#39ff14", glow: "#fff1a8" },
 };
 const SUPER_MISSILE_COLORS = ["#ff3030", "#ff9f1a", "#ffe23f", "#39ff14", "#4aa3ff"];
@@ -59,6 +68,7 @@ let isAdjustingControls = false;
 let cloudOffset = 0;
 let lastRenderTime = performance.now();
 let seenWorldVersion = null;
+let cruiseBoostTimer = null;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -180,6 +190,25 @@ function playSound(name) {
     tone(980, 0.055, "square", 0.045, 1240);
     setTimeout(() => tone(1320, 0.055, "square", 0.045, 1680), 70);
     setTimeout(() => tone(1760, 0.08, "triangle", 0.05, 1180), 140);
+  } else if (name === "laser") {
+    tone(1320, 0.12, "sawtooth", 0.055, 1880);
+    setTimeout(() => tone(720, 0.1, "triangle", 0.04, 1280), 70);
+  } else if (name === "boing") {
+    tone(340, 0.1, "sine", 0.06, 620);
+    setTimeout(() => tone(250, 0.08, "triangle", 0.04, 480), 90);
+  } else if (name === "poop") {
+    tone(92, 0.18, "sawtooth", 0.08, 56);
+    setTimeout(() => tone(130, 0.08, "square", 0.045, 90), 80);
+  } else if (name === "target") {
+    tone(740, 0.08, "triangle", 0.045, 520);
+    setTimeout(() => tone(740, 0.08, "triangle", 0.035, 520), 120);
+  } else if (name === "nuke") {
+    tone(64, 0.5, "sawtooth", 0.18, 24);
+    setTimeout(() => tone(118, 0.32, "square", 0.11, 42), 70);
+    setTimeout(() => tone(220, 0.18, "triangle", 0.08, 90), 180);
+  } else if (name === "cruise") {
+    tone(180, 0.22, "sawtooth", 0.065, 120);
+    setTimeout(() => tone(260, 0.18, "triangle", 0.04, 190), 80);
   } else if (name === "retire") {
     tone(760, 0.12, "sine", 0.075, 1140);
     setTimeout(() => tone(520, 0.14, "triangle", 0.065, 860), 95);
@@ -207,7 +236,9 @@ async function postJson(path, body, timeoutMs = 4000) {
 async function join(name) {
   ensureAudio();
   loginError.textContent = "";
-  const result = await postJson("/join", { id: clientId, name });
+  const body = { id: clientId, name };
+  if (!loginTankChoice.hidden) body.tankType = tankTypeSelect.value;
+  const result = await postJson("/join", body);
   seat = result.seat;
   seenWorldVersion = result.worldVersion;
   if (result.phase === "playing") {
@@ -219,6 +250,23 @@ async function join(name) {
     loginError.textContent = "Waiting for host to start the world.";
   }
   playSound("join");
+}
+
+function updateLoginTankChoice(state) {
+  const isSolo = state && Number(state.playerCount) === 1;
+  loginTankChoice.hidden = !isSolo;
+}
+
+async function refreshLoginOptions() {
+  if (loginOverlay.classList.contains("hidden")) return;
+  try {
+    const response = await fetch("/state", { cache: "no-store" });
+    if (!response.ok) return;
+    const state = await response.json();
+    updateLoginTankChoice(state);
+  } catch (error) {
+    updateLoginTankChoice(null);
+  }
 }
 
 function closeEvents() {
@@ -246,6 +294,7 @@ function connectEvents() {
 
 function handleWorldState() {
   if (!latest) return;
+  updateLoginTankChoice(latest);
   let shouldCloseEvents = false;
   if (seenWorldVersion !== null && latest.worldVersion !== seenWorldVersion) {
     seat = null;
@@ -265,6 +314,15 @@ function handleWorldState() {
   if (shouldCloseEvents) closeEvents();
 }
 
+function currentProjectiles() {
+  if (latest?.projectiles?.length) return latest.projectiles;
+  return latest?.projectile ? [latest.projectile] : [];
+}
+
+function activeCruiseProjectile() {
+  return currentProjectiles().find((projectile) => projectile.cruise && projectile.owner === seat);
+}
+
 function updateHud() {
   if (!latest) return;
   if (latest.phase !== "playing") {
@@ -272,20 +330,28 @@ function updateHud() {
     moveLeftButton.disabled = true;
     moveRightButton.disabled = true;
     fireButton.disabled = true;
+    fireButton.textContent = "Fire";
     angleInput.disabled = true;
     powerInput.disabled = true;
     return;
   }
   syncControlsFromState();
 
-  const myTurn = seat === latest.current && !latest.projectile && latest.winner === null;
+  const activeCruise = activeCruiseProjectile();
+  const projectileActive = currentProjectiles().length > 0;
+  const myTurn = seat === latest.current && !projectileActive && latest.winner === null;
+  const canSteer = Boolean(activeCruise) && latest.winner === null;
   const moveRemaining = latest.players[seat]?.moveRemaining ?? 0;
-  moveValue.textContent = Math.round(moveRemaining);
-  moveLeftButton.disabled = !myTurn;
-  moveRightButton.disabled = !myTurn;
-  fireButton.disabled = !myTurn;
+  moveValue.textContent = canSteer
+    ? `${Math.max(0, Math.ceil((activeCruise.maxAge || 10) - (activeCruise.age || 0)))}s`
+    : Math.round(moveRemaining);
+  moveLeftButton.disabled = !(myTurn || canSteer);
+  moveRightButton.disabled = !(myTurn || canSteer);
+  fireButton.disabled = !(myTurn || canSteer);
+  fireButton.textContent = canSteer ? "Lift" : "Fire";
   angleInput.disabled = !myTurn;
   powerInput.disabled = !myTurn;
+  if (!canSteer) stopCruiseBoost();
 
 }
 
@@ -315,11 +381,52 @@ function sendControls() {
 
 function fire() {
   ensureAudio();
+  if (activeCruiseProjectile()) {
+    boostCruise();
+    return;
+  }
   postJson("/fire", { id: clientId }).catch(() => {});
 }
 
 function move(direction) {
   postJson("/move", { id: clientId, direction }).catch(() => {});
+}
+
+function steer(direction) {
+  postJson("/steer", { id: clientId, direction }).catch(() => {});
+}
+
+function boostCruise() {
+  postJson("/boost", { id: clientId }, 1800).catch(() => {});
+}
+
+function startCruiseBoost(event) {
+  if (!activeCruiseProjectile()) return;
+  event.preventDefault();
+  ensureAudio();
+  boostCruise();
+  stopCruiseBoost();
+  cruiseBoostTimer = window.setInterval(() => {
+    if (activeCruiseProjectile()) {
+      boostCruise();
+    } else {
+      stopCruiseBoost();
+    }
+  }, 80);
+}
+
+function stopCruiseBoost() {
+  if (!cruiseBoostTimer) return;
+  window.clearInterval(cruiseBoostTimer);
+  cruiseBoostTimer = null;
+}
+
+function moveOrSteer(direction) {
+  if (activeCruiseProjectile()) {
+    steer(direction);
+  } else {
+    move(direction);
+  }
 }
 
 function resetGame() {
@@ -711,7 +818,7 @@ function drawDestroyedTank(player) {
 }
 
 function drawNameTag(player, index) {
-  const isActive = latest && index === latest.current && latest.winner === null;
+  const isActive = latest && !player.isDummy && index === latest.current && latest.winner === null;
   const knockedOut = player.health <= 0;
   const text = knockedOut
     ? `${player.name || `P${index + 1}`} KO`
@@ -739,6 +846,7 @@ function drawNameTag(player, index) {
 function drawMoveBars() {
   if (!latest) return;
   latest.players.forEach((player, index) => {
+    if (player.isDummy) return;
     if (player.health <= 0) return;
     const width = 32;
     const height = 5;
@@ -826,6 +934,23 @@ function drawTankTypeTrim(player) {
     ctx.beginPath();
     ctx.arc(-5, -47, 5, 0, Math.PI * 2);
     ctx.fill();
+  } else if (type === "cruise") {
+    ctx.fillStyle = "rgba(114, 167, 255, 0.95)";
+    roundRect(-27, -28, 54, 10, 5);
+    ctx.fill();
+    ctx.fillStyle = "#c7e2ff";
+    ctx.beginPath();
+    ctx.moveTo(0, -42);
+    ctx.lineTo(-15, -21);
+    ctx.lineTo(15, -21);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#264a85";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-24, -16);
+    ctx.lineTo(24, -16);
+    ctx.stroke();
   } else if (type === "super") {
     SUPER_MISSILE_COLORS.forEach((color, index) => {
       ctx.fillStyle = color;
@@ -838,6 +963,48 @@ function drawTankTypeTrim(player) {
     roundRect(-34, -16, 68, 9, 5);
     ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (type === "laser") {
+    ctx.strokeStyle = "#5df6ff";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-20, -24);
+    ctx.lineTo(20, -24);
+    ctx.stroke();
+    ctx.fillStyle = "#d8ffff";
+    ctx.beginPath();
+    ctx.arc(0, -24, 6, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === "chain") {
+    ctx.strokeStyle = "#d7dde4";
+    ctx.lineWidth = 3;
+    [-12, 0, 12].forEach((x) => {
+      ctx.beginPath();
+      ctx.arc(x, -24, 6, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  } else if (type === "poop") {
+    ctx.fillStyle = "#8b5a2b";
+    ctx.beginPath();
+    ctx.arc(-8, -22, 6, 0, Math.PI * 2);
+    ctx.arc(1, -26, 7, 0, Math.PI * 2);
+    ctx.arc(10, -21, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === "nuke") {
+    ctx.fillStyle = "#2a1111";
+    roundRect(-26, -31, 52, 18, 7);
+    ctx.fill();
+    ctx.strokeStyle = "#ff3030";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-18, -22);
+    ctx.lineTo(18, -22);
+    ctx.moveTo(0, -36);
+    ctx.lineTo(0, -8);
+    ctx.stroke();
+    ctx.fillStyle = "#ffd15c";
+    ctx.beginPath();
+    ctx.arc(0, -22, 6, 0, Math.PI * 2);
+    ctx.fill();
   } else if (type === "artillery") {
     ctx.globalAlpha = 0.74;
     ctx.fillStyle = typeColor;
@@ -875,10 +1042,20 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 25, thickness: 9, tip: 6, accent: "#ff3030" });
   } else if (type === "missile") {
     drawBarrel(player, undefined, 0, { length: 34, thickness: 5, tip: 5, accent: "#39ff14", fins: true });
+  } else if (type === "cruise") {
+    drawBarrel(player, undefined, 0, { length: 43, thickness: 6, tip: 5, accent: "#72a7ff", fins: true });
   } else if (type === "super") {
     [-12, -6, 0, 6, 12].forEach((offset, index) => {
       drawBarrel(player, undefined, offset, { length: 34, thickness: 3.6, tip: 4, accent: SUPER_MISSILE_COLORS[index], fins: true });
     });
+  } else if (type === "laser") {
+    drawBarrel(player, undefined, 0, { length: 42, thickness: 4, tip: 6, accent: "#5df6ff" });
+  } else if (type === "chain") {
+    drawBarrel(player, undefined, 0, { length: 31, thickness: 7, tip: 5, accent: "#c8d0d8" });
+  } else if (type === "poop") {
+    drawBarrel(player, undefined, 0, { length: 26, thickness: 8, tip: 6, accent: "#8b5a2b" });
+  } else if (type === "nuke") {
+    drawBarrel(player, undefined, 0, { length: 38, thickness: 9, tip: 7, accent: "#ff3030" });
   } else if (type === "artillery") {
     drawBarrel(player, undefined, 0, { length: 40, thickness: 8, tip: 5, accent: artilleryColor(player) });
   } else {
@@ -939,11 +1116,12 @@ function artilleryProjectileColor(p) {
 }
 
 function artilleryProjectileSize(p) {
-  const amount = clamp(((p.age || 0) - 0.35) / 2.65, 0, 1);
-  const scale = 0.5 + amount * 2.5;
+  const amount = clamp(((p.age || 0) - ARTILLERY_GROW_START) / ARTILLERY_GROW_DURATION, 0, 1);
+  const scale = 0.45 + amount * 2.75;
   return {
     width: 22 * scale,
     height: 11 * scale,
+    scale,
     charge: amount,
   };
 }
@@ -957,7 +1135,11 @@ function seekerProjectileColor(p) {
 function projectileTrailColor(p) {
   if (p.tankType === "red") return "rgba(255, 48, 48, 0.86)";
   if (p.tankType === "missile" || p.tankType === "super") return hexToRgba(seekerProjectileColor(p), 0.92);
+  if (p.tankType === "cruise") return "rgba(114, 167, 255, 0.9)";
   if (p.tankType === "artillery") return hexToRgba(artilleryProjectileColor(p), 0.82);
+  if (p.tankType === "chain") return "rgba(220, 230, 240, 0.86)";
+  if (p.tankType === "poop") return "rgba(132, 82, 38, 0.84)";
+  if (p.tankType === "nuke") return "rgba(255, 48, 48, 0.9)";
   return p.locked ? "rgba(57, 255, 20, 0.92)" : "rgba(255, 215, 120, 0.78)";
 }
 
@@ -1038,6 +1220,134 @@ function drawRedCoreProjectile() {
   return true;
 }
 
+function drawChainProjectile() {
+  const metal = ctx.createRadialGradient(-2, -2, 1, 0, 0, 7);
+  metal.addColorStop(0, "#f4f7fb");
+  metal.addColorStop(0.42, "#aeb8c3");
+  metal.addColorStop(1, "#3b444e");
+  ctx.fillStyle = metal;
+  ctx.beginPath();
+  ctx.arc(0, 0, 6.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(20, 25, 31, 0.9)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  return true;
+}
+
+function drawPoopProjectile() {
+  const mud = ctx.createRadialGradient(-2, -2, 1, 0, 0, 7);
+  mud.addColorStop(0, "#d59b55");
+  mud.addColorStop(0.55, "#8b5a2b");
+  mud.addColorStop(1, "#4b2d18");
+  ctx.fillStyle = mud;
+  ctx.beginPath();
+  ctx.arc(-2, 1, 5, 0, Math.PI * 2);
+  ctx.arc(3, -1, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  return true;
+}
+
+function drawNukeProjectile() {
+  const core = ctx.createRadialGradient(-3, -2, 1, 0, 0, 8);
+  core.addColorStop(0, "#fff4c8");
+  core.addColorStop(0.35, "#ff3030");
+  core.addColorStop(1, "#420606");
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 8, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 209, 92, 0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  return true;
+}
+
+function drawArtilleryProjectile(p) {
+  const tint = artilleryProjectileColor(p);
+  const size = artilleryProjectileSize(p);
+  const drawn = drawShellProjectile(size.width, size.height, tint, 0.52);
+  if (!drawn) {
+    const shell = ctx.createLinearGradient(-size.width / 2, -size.height / 2, size.width / 2, size.height / 2);
+    shell.addColorStop(0, "#f2e8ff");
+    shell.addColorStop(0.42, tint);
+    shell.addColorStop(1, "#1e1728");
+    ctx.fillStyle = shell;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size.width / 2, size.height / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = hexToRgba(tint, 0.12 + size.charge * 0.24);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size.width * 0.64, size.height * 0.76, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  return true;
+}
+
+function cruiseProjectileScale(p) {
+  const maxAge = p.maxAge || 10;
+  const ageRatio = clamp((p.age || 0) / Math.max(maxAge, 0.001), 0, 1);
+  return 1 - ageRatio * 0.62;
+}
+
+function drawCruiseProjectile(p) {
+  const color = "#72a7ff";
+  const scale = cruiseProjectileScale(p);
+  const boosting = (p.boostTime || 0) > 0;
+  if (drawSheetProjectile("blueRocket", 30 * scale, 13 * scale, color, 0.62)) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = "rgba(114, 167, 255, 0.2)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 19 * scale, 8 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = boosting
+      ? `rgba(255, 245, 160, ${0.38 + scale * 0.38})`
+      : `rgba(255, 230, 130, ${0.18 + scale * 0.27})`;
+    ctx.beginPath();
+    ctx.ellipse(-18 * scale, 0, (8 + Math.sin((p.age || 0) * 22) * 2 + (boosting ? 6 : 0)) * scale, 4 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return true;
+  }
+
+  ctx.save();
+  ctx.scale(scale, scale);
+  const body = ctx.createLinearGradient(-14, -5, 16, 5);
+  body.addColorStop(0, "#1c2e4f");
+  body.addColorStop(0.55, color);
+  body.addColorStop(1, "#eaf4ff");
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.moveTo(17, 0);
+  ctx.lineTo(8, -5);
+  ctx.lineTo(-13, -5);
+  ctx.lineTo(-17, 0);
+  ctx.lineTo(-13, 5);
+  ctx.lineTo(8, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#264a85";
+  ctx.beginPath();
+  ctx.moveTo(-5, -5);
+  ctx.lineTo(-14, -12);
+  ctx.lineTo(-11, -4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-5, 5);
+  ctx.lineTo(-14, 12);
+  ctx.lineTo(-11, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  return true;
+}
+
 function drawProjectileAsset(p, meta, flightAngle) {
   const type = p.tankType || "normal";
   if (type === "red") {
@@ -1049,20 +1359,20 @@ function drawProjectileAsset(p, meta, flightAngle) {
   if (type === "multi") {
     return drawShellProjectile(16, 8, "#10151b", 0.24);
   }
+  if (type === "chain") {
+    return drawChainProjectile();
+  }
+  if (type === "poop") {
+    return drawPoopProjectile();
+  }
+  if (type === "nuke") {
+    return drawNukeProjectile();
+  }
+  if (type === "cruise") {
+    return drawCruiseProjectile(p);
+  }
   if (type === "artillery") {
-    const tint = artilleryProjectileColor(p);
-    const size = artilleryProjectileSize(p);
-    const drawn = drawShellProjectile(size.width, size.height, tint, 0.48);
-    if (drawn && size.charge > 0) {
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.fillStyle = hexToRgba(tint, 0.1 + size.charge * 0.18);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, size.width * 0.56, size.height * 0.62, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    return drawn;
+    return drawArtilleryProjectile(p);
   }
   return drawSheetProjectile("blueRocket", 29, 13) || drawShellProjectile(20, 10, meta.shell, 0.18);
 }
@@ -1079,13 +1389,14 @@ function drawFallbackProjectile(meta) {
 function drawOneProjectile(p) {
   const meta = TANK_TYPE_META[p.tankType || "normal"] || TANK_TYPE_META.normal;
   const flightAngle = Math.atan2(p.vy || 0, p.vx || 1);
-  const tailX = p.x - Math.cos(flightAngle) * 14;
-  const tailY = p.y - Math.sin(flightAngle) * 14;
+  const visualScale = p.tankType === "cruise" ? cruiseProjectileScale(p) : 1;
+  const tailX = p.x - Math.cos(flightAngle) * 14 * visualScale;
+  const tailY = p.y - Math.sin(flightAngle) * 14 * visualScale;
   const trail = ctx.createLinearGradient(tailX, tailY, p.x, p.y);
   trail.addColorStop(0, "rgba(255, 215, 120, 0)");
   trail.addColorStop(1, projectileTrailColor(p));
   ctx.strokeStyle = trail;
-  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super") ? 2 : 3;
+  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise") ? Math.max(1, 2 * visualScale) : 3;
   ctx.beginPath();
   ctx.moveTo(tailX, tailY);
   ctx.lineTo(p.x, p.y);
@@ -1096,6 +1407,79 @@ function drawOneProjectile(p) {
   ctx.rotate(flightAngle);
   if (!drawProjectileAsset(p, meta, flightAngle)) drawFallbackProjectile(meta);
   ctx.restore();
+}
+
+function drawNukeMarks() {
+  (latest?.nukeMarks || []).forEach((mark) => {
+    ctx.save();
+    ctx.translate(mark.x, mark.y);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = "rgba(255, 48, 48, 0.92)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+    ctx.moveTo(-24, 0);
+    ctx.lineTo(-7, 0);
+    ctx.moveTo(7, 0);
+    ctx.lineTo(24, 0);
+    ctx.moveTo(0, -24);
+    ctx.lineTo(0, -7);
+    ctx.moveTo(0, 7);
+    ctx.lineTo(0, 24);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255, 209, 92, 0.72)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function drawEffects() {
+  (latest?.effects || []).forEach((effect) => {
+    const fade = clamp(effect.life / (effect.maxLife || 10), 0, 1);
+    if (effect.type === "laser") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      ctx.strokeStyle = `rgba(216, 255, 255, ${0.9 * fade})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(effect.x1, effect.y1);
+      ctx.lineTo(effect.x2, effect.y2);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(93, 246, 255, ${0.55 * fade})`;
+      ctx.lineWidth = 15;
+      ctx.beginPath();
+      ctx.moveTo(effect.x1, effect.y1);
+      ctx.lineTo(effect.x2, effect.y2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.type === "nuke-mark") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(255, 48, 48, ${0.7 * fade})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, 12 + (1 - fade) * 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.type === "nuke") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const radius = 60 + (1 - fade) * 150;
+      const glow = ctx.createRadialGradient(effect.x, effect.y, 4, effect.x, effect.y, radius);
+      glow.addColorStop(0, `rgba(255, 245, 190, ${0.95 * fade})`);
+      glow.addColorStop(0.22, `rgba(255, 48, 48, ${0.52 * fade})`);
+      glow.addColorStop(1, "rgba(255, 48, 48, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  });
 }
 
 function drawParticles() {
@@ -1201,11 +1585,13 @@ function render() {
   if (latest) {
     drawTerrain();
     drawPlatforms();
+    drawNukeMarks();
     drawHealthBars();
     latest.players.forEach(drawTank);
     drawMoveBars();
     latest.players.forEach(drawNameTag);
     drawProjectile();
+    drawEffects();
     drawParticles();
     drawInGameHud();
     drawWinner();
@@ -1229,16 +1615,42 @@ loginForm.addEventListener("submit", (event) => {
 
 angleInput.addEventListener("input", sendControls);
 powerInput.addEventListener("input", sendControls);
-moveLeftButton.addEventListener("click", () => move(-1));
-moveRightButton.addEventListener("click", () => move(1));
-fireButton.addEventListener("click", fire);
+moveLeftButton.addEventListener("click", () => moveOrSteer(-1));
+moveRightButton.addEventListener("click", () => moveOrSteer(1));
+fireButton.addEventListener("pointerdown", startCruiseBoost);
+fireButton.addEventListener("pointerup", stopCruiseBoost);
+fireButton.addEventListener("pointerleave", stopCruiseBoost);
+fireButton.addEventListener("pointercancel", stopCruiseBoost);
+fireButton.addEventListener("click", (event) => {
+  if (activeCruiseProjectile()) {
+    event.preventDefault();
+    return;
+  }
+  fire();
+});
 resetButton.addEventListener("click", resetGame);
 window.addEventListener("beforeunload", closeEvents);
 
 window.addEventListener("keydown", (event) => {
+  const cruise = activeCruiseProjectile();
+  if (cruise) {
+    if (event.key === "a" || event.key === "A" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      steer(-1);
+    }
+    if (event.key === "d" || event.key === "D" || event.key === "ArrowRight") {
+      event.preventDefault();
+      steer(1);
+    }
+    if (event.code === "Space") {
+      event.preventDefault();
+      boostCruise();
+    }
+    return;
+  }
   if (angleInput.disabled) return;
-  if (event.key === "a" || event.key === "A") move(-1);
-  if (event.key === "d" || event.key === "D") move(1);
+  if (event.key === "a" || event.key === "A") moveOrSteer(-1);
+  if (event.key === "d" || event.key === "D") moveOrSteer(1);
   if (event.key === "ArrowLeft") angleInput.value = clamp(Number(angleInput.value) + 1, 5, 85);
   if (event.key === "ArrowRight") angleInput.value = clamp(Number(angleInput.value) - 1, 5, 85);
   if (event.key === "ArrowUp") powerInput.value = clamp(Number(powerInput.value) + 2, 20, 100);
@@ -1253,4 +1665,6 @@ window.addEventListener("keydown", (event) => {
 nameInput.value = localStorage.getItem("skyBatteryName") || "";
 angleValue.textContent = angleInput.value;
 powerValue.textContent = powerInput.value;
+refreshLoginOptions();
+setInterval(refreshLoginOptions, 2000);
 render();

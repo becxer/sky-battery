@@ -14,6 +14,23 @@
           Name
           <input id="nameInput" type="text" maxlength="16" autocomplete="nickname" required />
         </label>
+        <label id="loginTankChoice" class="tank-select-row" hidden>
+          Tank
+          <select id="tankTypeSelect">
+            <option value="">Random</option>
+            <option value="normal">Normal</option>
+            <option value="multi">Triple Missile</option>
+            <option value="red">Red Core</option>
+            <option value="missile">Seeker</option>
+            <option value="artillery">Howitzer</option>
+            <option value="laser">Laser</option>
+            <option value="chain">3-Cushion Chain</option>
+            <option value="poop">Poop</option>
+            <option value="nuke">Nuke</option>
+            <option value="cruise">Cruise Missile</option>
+            <option value="super">Super</option>
+          </select>
+        </label>
         <p id="loginError" class="login-error" role="alert"></p>
         <button type="submit">Join Game</button>
       </form>
@@ -55,6 +72,6 @@
       <p class="hint">Three phones can join on the same Wi-Fi. Movement is limited each turn.</p>
     </main>
 
-    <script src="game.js?v=20260616-super-tank"></script>
+    <script src="game.js?v=20260617-artillery-growth"></script>
   </body>
 </html>

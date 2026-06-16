@@ -20,6 +20,7 @@ TANK_EDGE_MARGIN = 20
 TANK_FIRE_DISTANCE = 19
 TANK_MUZZLE_Y = 8
 TANK_CONTACT_RADIUS = 12
+TANK_BOTTOM_OFFSET = TANK_GROUND_OFFSET
 TANK_SLOPE_SAMPLE = 18
 TANK_MAX_BODY_ANGLE = math.radians(28)
 PLATFORM_ATTACH_STEP = 12
@@ -47,18 +48,40 @@ HOMING_LOCK_RADIUS = 260
 HOMING_DESCENT_MIN_VY = 80
 HOMING_TURN_RATE = math.radians(320)
 HOMING_MIN_SPEED = 330
-ARTILLERY_MIN_DAMAGE = 0.72
-ARTILLERY_MAX_DAMAGE = 1.55
-ARTILLERY_MIN_RADIUS = 0.5
-ARTILLERY_MAX_RADIUS = 3.0
-ARTILLERY_GROW_START = 0.35
+ARTILLERY_MIN_DAMAGE = 0.65
+ARTILLERY_MAX_DAMAGE = 2.05
+ARTILLERY_MIN_RADIUS = 0.45
+ARTILLERY_MAX_RADIUS = 3.2
+ARTILLERY_GROW_START = 0.15
 ARTILLERY_GROW_DURATION = 2.65
+DUMMY_RESPAWN_SECONDS = 3.0
+POOP_DAMAGE_MULTIPLIER = 1.5
+POOP_MOVE_FACTOR = 0.5
+NUKE_MARK_DAMAGE = 5
+NUKE_MARK_RADIUS_MULTIPLIER = 0.35
+NUKE_MATCH_RADIUS = 18
+NUKE_DAMAGE = 95
+NUKE_RADIUS_MULTIPLIER = ARTILLERY_MAX_RADIUS * 2
+CRUISE_MAX_AGE = 10.0
+CRUISE_SPEED_SCALE = 0.30
+CRUISE_MIN_SPEED = 105
+CRUISE_DRAG = 0.990
+CRUISE_TURN_RATE = math.radians(115)
+CRUISE_STEER_TIME = 0.22
+CRUISE_BOOST_TIME = 0.18
+CRUISE_GRAVITY_SCALE = 0.24
+CRUISE_LIFT_ACCEL = 720
 TANK_TYPES = {
     "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
     "multi": {"label": "Triple", "damage": 0.75, "radius": 0.82, "shots": [-3, 0, 3], "barrels": [-6, 0, 6]},
     "red": {"label": "Red Core", "damage": 1.0, "baseDamage": 80, "radius": 0.45, "shots": [0], "barrels": [0]},
     "missile": {"label": "Seeker", "damage": 0.2, "radius": 0.92, "shots": [0], "barrels": [0], "homing": True},
     "artillery": {"label": "Howitzer", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "artillery": True},
+    "laser": {"label": "Laser", "damage": 1.0, "radius": 0.35, "shots": [0], "barrels": [0], "laser": True},
+    "chain": {"label": "Chain", "damage": 0.78, "radius": 0.86, "shots": [0], "barrels": [0], "bouncy": True, "maxBounces": 3},
+    "poop": {"label": "Poop", "damage": 0.28, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
+    "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
+    "cruise": {"label": "Cruise", "damage": 0.6, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
     "super": {
         "label": "Super",
         "damage": 0.22,
@@ -76,6 +99,11 @@ TANK_TYPE_WEIGHTS = {
     "red": 24,
     "missile": 24,
     "artillery": 24,
+    "laser": 18,
+    "chain": 18,
+    "poop": 18,
+    "nuke": 10,
+    "cruise": 14,
     "super": 1,
 }
 
@@ -530,6 +558,56 @@ def projectile_path_hit(previous_x, previous_y, current_x, current_y):
     return None
 
 
+def raycast_laser(owner, start_x, start_y, angle, max_distance=1600):
+    step = 3
+    distance = 0
+    while distance <= max_distance:
+        x = start_x + math.cos(angle) * distance
+        y = start_y + math.sin(angle) * distance
+        if x < 0 or x >= W or y < -80 or y > H + 80:
+            return {"type": "air", "x": x, "y": y}
+        if solid_at(x, y):
+            return {"type": "solid", "x": x, "y": y}
+        for index, player in enumerate(state["players"]):
+            if index == owner or player["health"] <= 0:
+                continue
+            if math.hypot(player["x"] - x, player["y"] - 8 - y) <= TANK_CONTACT_RADIUS:
+                return {"type": "player", "x": x, "y": y, "player": index}
+        distance += step
+    return {"type": "air", "x": start_x + math.cos(angle) * max_distance, "y": start_y + math.sin(angle) * max_distance}
+
+
+def surface_normal_at(x, y, vx, vy):
+    sample = 8
+    left_x = clamp(x - sample, 0, W - 1)
+    right_x = clamp(x + sample, 0, W - 1)
+    left_y = floor_y(left_x)
+    right_y = floor_y(right_x)
+    tx = right_x - left_x
+    ty = right_y - left_y
+    nx = -ty
+    ny = tx
+    length = max(0.001, math.hypot(nx, ny))
+    nx /= length
+    ny /= length
+    if vx * nx + vy * ny > 0:
+        nx = -nx
+        ny = -ny
+    return nx, ny
+
+
+def bounce_projectile(projectile, hit_x, hit_y):
+    nx, ny = surface_normal_at(hit_x, hit_y, projectile["vx"], projectile["vy"])
+    dot = projectile["vx"] * nx + projectile["vy"] * ny
+    projectile["vx"] = (projectile["vx"] - 2 * dot * nx) * 0.76
+    projectile["vy"] = (projectile["vy"] - 2 * dot * ny) * 0.76
+    projectile["x"] = hit_x + nx * 8
+    projectile["y"] = hit_y + ny * 8
+    projectile["bounces"] = projectile.get("bounces", 0) + 1
+    projectile["age"] = max(projectile.get("age", 0), 0.22)
+    sounds.append("boing")
+
+
 def random_positions(count=None):
     count = count or player_count()
     slots = list(range(90, W - 89, 70))
@@ -594,7 +672,42 @@ def make_player(index, x):
         "aim": 45,
         "power": 66,
         "moveRemaining": MOVE_LIMIT,
+        "stuckTurns": 0,
+        "poopDamage": 0,
+        "poopStacks": 0,
+        "respawnTimer": 0,
+        "isDummy": False,
     }
+
+
+def make_dummy_target(index, x):
+    target = make_player(index, x)
+    target.update({
+        "name": "Target",
+        "tankType": "normal",
+        "color": "#d7dde4",
+        "moveRemaining": 0,
+        "poopDamage": 0,
+        "poopStacks": 0,
+        "respawnTimer": 0,
+        "isDummy": True,
+    })
+    return target
+
+
+def build_players_for_count(count):
+    positions = random_positions(count + 1 if count == 1 else count)
+    players = [make_player(i, x) for i, x in enumerate(positions[:count])]
+    if count == 1:
+        target = make_dummy_target(1, positions[1])
+        players.append(target)
+        if players[0]["x"] < target["x"]:
+            players[0]["dir"] = 1
+            target["dir"] = -1
+        else:
+            players[0]["dir"] = -1
+            target["dir"] = 1
+    return players
 
 
 state = {
@@ -610,6 +723,8 @@ state = {
     "projectile": None,
     "projectiles": [],
     "particles": [],
+    "effects": [],
+    "nukeMarks": [],
     "wind": 0,
     "skyMode": random_sky_mode(),
     "winner": None,
@@ -617,7 +732,7 @@ state = {
 }
 state["platformGround"] = state["ground"][:]
 state["platforms"] = install_platforms(build_platforms(state["ground"]))
-state["players"] = [make_player(i, x) for i, x in enumerate(random_positions(DEFAULT_PLAYER_COUNT))]
+state["players"] = build_players_for_count(DEFAULT_PLAYER_COUNT)
 validate_spawns()
 state["current"] = random.randrange(PLAYER_COUNT)
 state["wind"] = round(random.uniform(-2.8, 2.8), 2)
@@ -629,7 +744,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["ground"] = build_terrain()
     state["platformGround"] = state["ground"][:]
     state["platforms"] = install_platforms(build_platforms(state["ground"]))
-    state["players"] = [make_player(i, x) for i, x in enumerate(random_positions(player_count()))]
+    state["players"] = build_players_for_count(player_count())
     validate_spawns()
     if kick_clients:
         clients.clear()
@@ -639,6 +754,8 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["current"] = random.randrange(player_count())
     set_projectiles([])
     state["particles"] = []
+    state["effects"] = []
+    state["nukeMarks"] = []
     state["wind"] = round(random.uniform(-2.8, 2.8), 2)
     state["skyMode"] = random_sky_mode()
     state["winner"] = None
@@ -652,12 +769,19 @@ def recreate_world():
     state["phase"] = "setup"
     set_projectiles([])
     state["particles"] = []
+    state["effects"] = []
+    state["nukeMarks"] = []
     state["winner"] = None
     state["worldVersion"] += 1
     sounds.append("join")
 
 
-def assign_seat(client_id, name):
+def apply_solo_tank_choice(seat, tank_type):
+    if player_count() == 1 and seat == 0 and tank_type in TANK_TYPES:
+        state["players"][0]["tankType"] = tank_type
+
+
+def assign_seat(client_id, name, tank_type=None):
     if state["phase"] != "playing":
         clients[client_id] = {"name": name, "seat": player_count(), "last": time.time()}
         return player_count()
@@ -666,6 +790,7 @@ def assign_seat(client_id, name):
         existing["name"] = name
         if existing["seat"] in range(player_count()):
             state["players"][existing["seat"]]["name"] = name
+            apply_solo_tank_choice(existing["seat"], tank_type)
         return existing["seat"]
 
     taken = {c["seat"] for c in clients.values()}
@@ -674,15 +799,23 @@ def assign_seat(client_id, name):
     clients[client_id] = {"name": name, "seat": seat, "last": time.time()}
     if seat in range(count):
         state["players"][seat]["name"] = name
+        apply_solo_tank_choice(seat, tank_type)
     sounds.append("join")
     return seat
+
+
+def start_turn_for(index):
+    player = state["players"][index]
+    stacks = max(0, int(player.get("poopStacks", 0)))
+    player["moveRemaining"] = round(MOVE_LIMIT * (POOP_MOVE_FACTOR ** stacks))
+    player["stuckTurns"] = 0
 
 
 def next_turn():
     alive = [i for i, p in enumerate(state["players"]) if p["health"] > 0]
     if player_count() == 1:
         state["current"] = 0
-        state["players"][0]["moveRemaining"] = MOVE_LIMIT
+        start_turn_for(0)
         state["wind"] = round(random.uniform(-2.8, 2.8), 2)
         return
     if len(alive) == 1:
@@ -696,9 +829,40 @@ def next_turn():
         candidate = (state["current"] + step) % count
         if state["players"][candidate]["health"] > 0:
             state["current"] = candidate
-            state["players"][candidate]["moveRemaining"] = MOVE_LIMIT
+            start_turn_for(candidate)
             state["wind"] = round(random.uniform(-2.8, 2.8), 2)
             return
+
+
+def fire_laser(player, owner):
+    angle = barrel_angle_for(player)
+    start_x = player["x"] + math.cos(angle) * TANK_FIRE_DISTANCE
+    start_y = player["y"] - TANK_MUZZLE_Y + math.sin(angle) * TANK_FIRE_DISTANCE
+    hit = raycast_laser(owner, start_x, start_y, angle)
+    state["effects"].append({
+        "type": "laser",
+        "x1": start_x,
+        "y1": start_y,
+        "x2": hit["x"],
+        "y2": hit["y"],
+        "life": 10,
+        "maxLife": 10,
+    })
+    sounds.append("laser")
+    if hit["type"] == "solid":
+        carve_crater(hit["x"], hit["y"], 8)
+        damage_platforms(hit["x"], hit["y"], 9)
+    elif hit["type"] == "player":
+        target = state["players"][hit["player"]]
+        target["health"] -= 42
+        target["vx"] += math.cos(angle) * 14
+        target["vy"] += math.sin(angle) * 8 - 5
+        target["av"] += target["dir"] * 0.16
+        sounds.append("damage")
+        if target["health"] <= 0:
+            target["health"] = 0
+            sounds.append("retire")
+    resolve_shot_end()
 
 
 def fire_for(client_id):
@@ -707,6 +871,9 @@ def fire_for(client_id):
         return
     player = state["players"][state["current"]]
     spec = tank_spec(player)
+    if spec.get("laser"):
+        fire_laser(player, state["current"])
+        return
     base_angle = barrel_angle_for(player)
     power = player["power"] * PROJECTILE_POWER_SCALE
     damage = spec["damage"]
@@ -717,11 +884,12 @@ def fire_for(client_id):
         angle = base_angle + math.radians(shot_offset)
         offset_x = -math.sin(angle) * barrel_offset
         offset_y = math.cos(angle) * barrel_offset
+        projectile_power = power * (CRUISE_SPEED_SCALE if spec.get("cruise") else 1.0)
         projectiles.append({
             "x": player["x"] + math.cos(angle) * TANK_FIRE_DISTANCE + offset_x,
             "y": player["y"] - TANK_MUZZLE_Y + math.sin(angle) * TANK_FIRE_DISTANCE + offset_y,
-            "vx": math.cos(angle) * power + player["vx"] * 0.25,
-            "vy": math.sin(angle) * power + player["vy"] * 0.08,
+            "vx": math.cos(angle) * projectile_power + player["vx"] * 0.25,
+            "vy": math.sin(angle) * projectile_power + player["vy"] * 0.08,
             "angle": 0,
             "av": player["dir"] * 0.24,
             "age": 0,
@@ -734,10 +902,19 @@ def fire_for(client_id):
             "baseDamage": spec.get("baseDamage"),
             "radiusMultiplier": radius,
             "homing": bool(spec.get("homing")),
+            "cruise": bool(spec.get("cruise")),
+            "maxAge": spec.get("maxAge", CRUISE_MAX_AGE if spec.get("cruise") else None),
+            "steer": 0,
+            "steerTime": 0,
+            "boostTime": 0,
+            "bouncy": bool(spec.get("bouncy")),
+            "bounces": 0,
+            "maxBounces": spec.get("maxBounces", 0),
+            "effect": spec.get("effect"),
             "locked": False,
         })
     set_projectiles(projectiles)
-    sounds.append("fire")
+    sounds.append("cruise" if spec.get("cruise") else "fire")
 
 
 def move_for(client_id, direction):
@@ -761,6 +938,32 @@ def move_for(client_id, direction):
     player["vx"] = 0
     player["moveRemaining"] = max(0, player["moveRemaining"] - distance)
     sounds.append("move")
+
+
+def steer_for(client_id, direction):
+    client = clients.get(client_id)
+    if state["phase"] != "playing" or not client:
+        return
+    seat = client["seat"]
+    if seat not in range(player_count()):
+        return
+    direction = -1 if float(direction) < 0 else 1
+    for projectile in state.get("projectiles", []):
+        if projectile.get("cruise") and projectile.get("owner") == seat:
+            projectile["steer"] = direction
+            projectile["steerTime"] = CRUISE_STEER_TIME
+
+
+def boost_for(client_id):
+    client = clients.get(client_id)
+    if state["phase"] != "playing" or not client:
+        return
+    seat = client["seat"]
+    if seat not in range(player_count()):
+        return
+    for projectile in state.get("projectiles", []):
+        if projectile.get("cruise") and projectile.get("owner") == seat:
+            projectile["boostTime"] = CRUISE_BOOST_TIME
 
 
 def can_move_to(start_x, end_x, current_y=None):
@@ -850,7 +1053,7 @@ def damage_island(platform, x, y, radius):
     return pieces
 
 
-def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, base_damage=None, advance_turn=True):
+def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, base_damage=None, effect=None, owner=None, advance_turn=True):
     base_radius = clamp(14 + impact_speed * EXPLOSION_SPEED_SCALE, EXPLOSION_MIN_RADIUS, EXPLOSION_MAX_RADIUS)
     radius_cap = EXPLOSION_MAX_RADIUS * max(1.0, radius_multiplier)
     radius = clamp(base_radius * radius_multiplier, 8, radius_cap)
@@ -858,7 +1061,7 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     damage_platforms(x, y, radius * EXPLOSION_PLATFORM_SCALE)
     hit = False
     retired = False
-    for player in state["players"]:
+    for index, player in enumerate(state["players"]):
         if player["health"] <= 0:
             continue
         dx = player["x"] - x
@@ -871,6 +1074,12 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
                 damage = round(base_damage * damage_multiplier)
             else:
                 damage = round(falloff * (36 + impact_speed * 0.032) * damage_multiplier)
+            if effect == "poop" and index != owner:
+                previous_poop_damage = player.get("poopDamage", 0)
+                if previous_poop_damage > 0:
+                    damage = max(1, round(previous_poop_damage * POOP_DAMAGE_MULTIPLIER))
+                player["poopDamage"] = damage
+                player["poopStacks"] = max(0, int(player.get("poopStacks", 0))) + 1
             player["health"] -= damage
             if player["health"] <= 0:
                 player["health"] = 0
@@ -897,6 +1106,8 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
         })
 
     sounds.append("explode")
+    if effect == "poop":
+        sounds.append("poop")
     if hit:
         sounds.append("damage")
     if retired:
@@ -905,6 +1116,65 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     if advance_turn:
         set_projectiles([])
         resolve_shot_end()
+
+
+def nuke_mark_for_owner(owner):
+    for mark in state.get("nukeMarks", []):
+        if mark.get("owner") == owner:
+            return mark
+    return None
+
+
+def set_nuke_mark(owner, x, y):
+    state["nukeMarks"] = [mark for mark in state.get("nukeMarks", []) if mark.get("owner") != owner]
+    state["nukeMarks"].append({"owner": owner, "x": x, "y": y})
+    state["effects"].append({
+        "type": "nuke-mark",
+        "x": x,
+        "y": y,
+        "life": 18,
+        "maxLife": 18,
+    })
+    sounds.append("target")
+
+
+def handle_nuke_impact(projectile, x, y, impact_speed):
+    owner = projectile.get("owner")
+    mark = nuke_mark_for_owner(owner)
+    if mark and math.hypot(mark["x"] - x, mark["y"] - y) <= NUKE_MATCH_RADIUS:
+        state["nukeMarks"] = [item for item in state.get("nukeMarks", []) if item.get("owner") != owner]
+        state["effects"].append({
+            "type": "nuke",
+            "x": mark["x"],
+            "y": mark["y"],
+            "life": 24,
+            "maxLife": 24,
+        })
+        explode(
+            mark["x"],
+            mark["y"],
+            impact_speed + 60,
+            1.0,
+            NUKE_RADIUS_MULTIPLIER,
+            NUKE_DAMAGE,
+            None,
+            owner,
+            advance_turn=False,
+        )
+        sounds.append("nuke")
+    else:
+        set_nuke_mark(owner, x, y)
+        explode(
+            x,
+            y,
+            impact_speed,
+            1.0,
+            NUKE_MARK_RADIUS_MULTIPLIER,
+            NUKE_MARK_DAMAGE,
+            None,
+            owner,
+            advance_turn=False,
+        )
 
 
 def update_player(player, dt):
@@ -923,9 +1193,47 @@ def update_player(player, dt):
         target_angle = ground_angle_at(player["x"], player["y"])
         player["angleBody"] += (target_angle - player["angleBody"]) * 0.35
         player["av"] *= 0.35
-    if player["y"] > H + 80 and player["health"] > 0:
+    if player["y"] + TANK_BOTTOM_OFFSET >= H and player["health"] > 0:
         player["health"] = 0
         sounds.append("retire")
+
+
+def respawn_dummy_target(player):
+    exclude = [p["x"] for p in state["players"] if p is not player and p["health"] > 0]
+    player["x"] = safe_spawn_x(exclude)
+    player["y"] = spawn_y(player["x"])
+    player["vx"] = 0
+    player["vy"] = 0
+    player["av"] = 0
+    player["health"] = 100
+    player["moveRemaining"] = 0
+    player["stuckTurns"] = 0
+    player["poopDamage"] = 0
+    player["poopStacks"] = 0
+    player["respawnTimer"] = 0
+    player["angleBody"] = ground_angle_at(player["x"], player["y"])
+    if state["players"] and not state["players"][0].get("isDummy"):
+        player["dir"] = -1 if player["x"] > state["players"][0]["x"] else 1
+    sounds.append("join")
+
+
+def update_dummy_respawns(dt):
+    if player_count() != 1:
+        return
+    for player in state["players"]:
+        if not player.get("isDummy"):
+            continue
+        if player["health"] > 0:
+            player["respawnTimer"] = 0
+            continue
+        timer = player.get("respawnTimer", 0)
+        if timer <= 0:
+            timer = DUMMY_RESPAWN_SECONDS
+        timer -= dt
+        if timer <= 0.000001:
+            respawn_dummy_target(player)
+        else:
+            player["respawnTimer"] = timer
 
 
 def angle_delta(target, current):
@@ -961,6 +1269,20 @@ def steer_homing_projectile(p, dt):
         sounds.append("lock")
 
 
+def update_cruise_projectile(p, dt):
+    speed = max(CRUISE_MIN_SPEED, math.hypot(p["vx"], p["vy"]) * CRUISE_DRAG)
+    angle = math.atan2(p["vy"], p["vx"])
+    if p.get("steerTime", 0) > 0:
+        angle += p.get("steer", 0) * CRUISE_TURN_RATE * dt
+        p["steerTime"] = max(0, p.get("steerTime", 0) - dt)
+    p["vx"] = math.cos(angle) * speed
+    p["vy"] = math.sin(angle) * speed + PROJECTILE_GRAVITY * CRUISE_GRAVITY_SCALE * dt
+    if p.get("boostTime", 0) > 0:
+        p["vy"] -= CRUISE_LIFT_ACCEL * dt
+        p["boostTime"] = max(0, p.get("boostTime", 0) - dt)
+    p["angle"] = angle
+
+
 def update_projectiles(dt):
     projectiles = state.get("projectiles", [])
     if not projectiles:
@@ -972,13 +1294,32 @@ def update_projectiles(dt):
         p["age"] += dt
         previous_x = p["x"]
         previous_y = p["y"]
-        steer_homing_projectile(p, dt)
-        p["vx"] += state["wind"] * WIND_FORCE * dt
-        p["vy"] += PROJECTILE_GRAVITY * dt
+        if p.get("cruise"):
+            update_cruise_projectile(p, dt)
+        else:
+            steer_homing_projectile(p, dt)
+            p["vx"] += state["wind"] * WIND_FORCE * dt
+            p["vy"] += PROJECTILE_GRAVITY * dt
         p["x"] += p["vx"] * dt
         p["y"] += p["vy"] * dt
         p["angle"] += p["av"] * dt * 10
         speed = math.hypot(p["vx"], p["vy"])
+
+        if p.get("cruise") and p["age"] >= p.get("maxAge", CRUISE_MAX_AGE):
+            damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
+            explode(
+                p["x"],
+                p["y"],
+                speed,
+                damage_multiplier,
+                radius_multiplier,
+                base_damage,
+                p.get("effect"),
+                p.get("owner"),
+                advance_turn=False,
+            )
+            exploded = True
+            continue
 
         if p["x"] < -40 or p["x"] > W + 40 or p["y"] > H + 60:
             continue
@@ -986,6 +1327,14 @@ def update_projectiles(dt):
         hit = projectile_path_hit(previous_x, previous_y, p["x"], p["y"])
         if hit is not None:
             hit_x, hit_y = hit
+            if p.get("tankType") == "nuke":
+                handle_nuke_impact(p, hit_x, hit_y, speed)
+                exploded = True
+                continue
+            if p.get("bouncy") and p.get("bounces", 0) < p.get("maxBounces", 0):
+                bounce_projectile(p, hit_x, hit_y)
+                survivors.append(p)
+                continue
             damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
             explode(
                 hit_x,
@@ -994,6 +1343,8 @@ def update_projectiles(dt):
                 damage_multiplier,
                 radius_multiplier,
                 base_damage,
+                p.get("effect"),
+                p.get("owner"),
                 advance_turn=False,
             )
             exploded = True
@@ -1005,6 +1356,11 @@ def update_projectiles(dt):
                 if player["health"] <= 0:
                     continue
                 if math.hypot(player["x"] - p["x"], player["y"] - p["y"]) < TANK_CONTACT_RADIUS:
+                    if p.get("tankType") == "nuke":
+                        handle_nuke_impact(p, p["x"], p["y"], speed + 18)
+                        exploded = True
+                        direct_hit = True
+                        break
                     damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
                     explode(
                         p["x"],
@@ -1013,6 +1369,8 @@ def update_projectiles(dt):
                         damage_multiplier,
                         radius_multiplier,
                         base_damage,
+                        p.get("effect"),
+                        p.get("owner"),
                         advance_turn=False,
                     )
                     exploded = True
@@ -1038,6 +1396,15 @@ def update_particles():
     state["particles"] = next_particles[:120]
 
 
+def update_effects():
+    next_effects = []
+    for effect in state.get("effects", []):
+        effect["life"] -= 1
+        if effect["life"] > 0:
+            next_effects.append(effect)
+    state["effects"] = next_effects[:40]
+
+
 def snapshot():
     state["tick"] += 1
     event_sounds = list(sounds)
@@ -1049,7 +1416,7 @@ def snapshot():
         "platformMask": state["platformMask"],
         "platforms": state["platforms"],
         "players": [
-            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining")}
+            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "respawnTimer", "isDummy")}
             for p in state["players"]
         ],
         "playerCount": state["playerCount"],
@@ -1059,6 +1426,8 @@ def snapshot():
         "projectile": state["projectile"],
         "projectiles": state.get("projectiles", []),
         "particles": state["particles"],
+        "effects": state.get("effects", []),
+        "nukeMarks": state.get("nukeMarks", []),
         "wind": state["wind"],
         "skyMode": state["skyMode"],
         "winner": state["winner"],
@@ -1087,8 +1456,10 @@ def game_loop():
             if state["phase"] == "playing" and state["winner"] is None:
                 for player in state["players"]:
                     update_player(player, 1 / 60)
+                update_dummy_respawns(1 / 60)
                 update_projectiles(1 / 60)
             update_particles()
+            update_effects()
             now = time.time()
             if now - last_broadcast > 1 / 30:
                 broadcast()
@@ -1105,7 +1476,8 @@ class Handler(SimpleHTTPRequestHandler):
         with lock:
             if self.path == "/join":
                 name = "".join(ch for ch in str(body.get("name", "Player"))[:16] if ch.isalnum() or ch in " _-").strip() or "Player"
-                seat = assign_seat(str(body.get("id", "")), name)
+                tank_type = str(body.get("tankType", ""))
+                seat = assign_seat(str(body.get("id", "")), name, tank_type)
                 self.send_json({"seat": seat, "phase": state["phase"], "worldVersion": state["worldVersion"]})
             elif self.path == "/input":
                 client = clients.get(str(body.get("id", "")))
@@ -1120,12 +1492,23 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/move":
                 move_for(str(body.get("id", "")), body.get("direction", 0))
                 self.send_json({"ok": True})
+            elif self.path == "/steer":
+                steer_for(str(body.get("id", "")), body.get("direction", 0))
+                self.send_json({"ok": True})
+            elif self.path == "/boost":
+                boost_for(str(body.get("id", "")))
+                self.send_json({"ok": True})
             elif self.path == "/reset":
                 reset_game()
                 self.send_json({"ok": True})
             elif self.path == "/host/start":
-                reset_game(count=body.get("count", player_count()), kick_clients=True, phase="playing")
-                self.send_json({"ok": True, "playerCount": player_count(), "worldVersion": state["worldVersion"]})
+                count = int(clamp(int(body.get("count", player_count())), MIN_PLAYERS, MAX_PLAYERS))
+                reset_game(count=count, kick_clients=True, phase="playing")
+                self.send_json({
+                    "ok": True,
+                    "playerCount": player_count(),
+                    "worldVersion": state["worldVersion"],
+                })
             elif self.path == "/host/recreate":
                 recreate_world()
                 self.send_json({"ok": True, "phase": state["phase"], "worldVersion": state["worldVersion"]})
