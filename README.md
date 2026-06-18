@@ -61,6 +61,50 @@ The host page is:
 http://<server-ip>:4173/host.html
 ```
 
+## Run The Server On Android
+
+You can run the current Python server directly on an Android phone with Termux. This keeps the existing code path and does not require an APK.
+
+Install Termux on the Android phone that will host the game, then run:
+
+```bash
+pkg update
+pkg install python git
+git clone https://github.com/becxer/sky-battery.git
+cd sky-battery
+python server.py
+```
+
+On the server phone, open:
+
+```text
+http://127.0.0.1:4173
+```
+
+To let other phones join, find the Android phone's Wi-Fi IP address in Android Wi-Fi details, or from Termux:
+
+```bash
+ip -4 addr show wlan0
+```
+
+Other phones on the same Wi-Fi should open:
+
+```text
+http://<android-phone-ip>:4173
+```
+
+For longer games, keep the server phone awake or run this before starting the server:
+
+```bash
+termux-wake-lock
+```
+
+After playing, release it with:
+
+```bash
+termux-wake-unlock
+```
+
 ## Host Flow
 
 1. Open `/host.html`.
@@ -82,6 +126,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 ## Troubleshooting
 
 - If phones cannot connect, confirm they are on the same Wi-Fi and use the PC's Wi-Fi IPv4 address.
+- If Android is hosting the server, confirm the hosting phone is not asleep and that the Wi-Fi network allows devices to reach each other.
 - If port `4173` is already in use, stop the old Python server process and run `python server.py` again.
 - If the browser shows an old UI, refresh the page or close and reopen the tab.
 - If the server file changes, restart the server.
