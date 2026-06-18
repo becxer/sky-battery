@@ -101,3 +101,8 @@ Main files:
 - `index.html`, `style.css`: game UI
 - `host.html`, `host.js`: host setup page
 - `assets/`: tank and projectile assets
+
+## Authors
+
+- Eugene Back
+- Seohyun Back
