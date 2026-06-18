@@ -2,7 +2,7 @@
 
 ![Sky Battery gameplay screen](docs/sky-battery-gameplay.png)
 
-Sky Battery is a local Wi-Fi browser artillery game. One PC runs the Python server, and phones or browsers on the same network join as clients.
+Sky Battery is a local Wi-Fi browser artillery game developed by Eugene Back and Seohyun Back. One PC runs the Python server, and phones or browsers on the same network join as clients.
 
 ## Requirements
 
