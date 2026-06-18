@@ -65,23 +65,62 @@ http://<server-ip>:4173/host.html
 
 You can run the current Python server directly on an Android phone with Termux. This keeps the existing code path and does not require an APK.
 
-Install Termux on the Android phone that will host the game, then run:
+### Fresh Termux Setup
+
+1. Install Termux on the Android phone that will host the game.
+   - Recommended source: F-Droid
+   - Avoid old or incompatible Termux builds if package installs fail.
+2. Open Termux.
+3. Update Termux packages:
 
 ```bash
 pkg update
-pkg install python git
+pkg upgrade
+```
+
+If Termux asks a question during update or upgrade, press `y` and Enter.
+
+Fresh Termux does not include Git or Python, so install both:
+
+```bash
+pkg install git python
+```
+
+Check that they installed correctly:
+
+```bash
+git --version
+python --version
+```
+
+Download Sky Battery:
+
+```bash
 git clone https://github.com/becxer/sky-battery.git
 cd sky-battery
+```
+
+Start the server:
+
+```bash
 python server.py
 ```
 
-On the server phone, open:
+Keep Termux open while playing. On the server phone, open Chrome and visit:
 
 ```text
 http://127.0.0.1:4173
 ```
 
-To let other phones join, find the Android phone's Wi-Fi IP address in Android Wi-Fi details, or from Termux:
+The host page on the server phone is:
+
+```text
+http://127.0.0.1:4173/host.html
+```
+
+### Join From Other Phones
+
+All phones must be on the same Wi-Fi. Find the Android server phone's Wi-Fi IP address in Android Wi-Fi details, or run this in Termux:
 
 ```bash
 ip -4 addr show wlan0
@@ -91,6 +130,12 @@ Other phones on the same Wi-Fi should open:
 
 ```text
 http://<android-phone-ip>:4173
+```
+
+Example:
+
+```text
+http://192.168.0.25:4173
 ```
 
 For longer games, keep the server phone awake or run this before starting the server:
