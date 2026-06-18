@@ -2,44 +2,29 @@
 
 ## Project Structure & Module Organization
 
-This repository is currently a clean starting point with no application source, tests, or assets checked in yet. As it grows, keep the top-level layout predictable:
-
-- `src/` for application code and reusable modules.
-- `tests/` for automated tests that mirror the structure of `src/`.
-- `assets/` for static files such as images, fixtures, or sample data.
-- `docs/` for design notes, architecture decisions, and contributor docs.
-
-Avoid placing generated output, dependency folders, or local environment files in the repository unless they are intentionally versioned.
+Sky Battery is a local Wi-Fi browser artillery game. The authoritative game logic lives in `server.py`: player state, turn order, terrain generation, projectile physics, weapon effects, HTTP APIs, and SSE broadcasts. The browser client is in `game.js`, which renders the canvas, plays sounds, handles input, and posts control/fire/move requests back to the server. `index.html` and `style.css` define the mobile-first game screen; `host.html` and `host.js` provide the host page for player count and world recreation. Art assets are stored in `assets/`, while `vendor/` contains vendored libraries.
 
 ## Build, Test, and Development Commands
 
-No build or test tooling is currently configured. When tooling is added, document the canonical commands here. Examples:
+- `python server.py`: start the server on `0.0.0.0:4173`.
+- `python -m py_compile server.py`: validate Python syntax before restarting the server.
+- `Invoke-RestMethod http://127.0.0.1:4173/state`: smoke-test that the server responds.
+- Open `http://<host-ip>:4173` on phones on the same Wi-Fi; use `http://<host-ip>:4173/host.html` for host controls.
 
-- `npm install` or equivalent: install project dependencies.
-- `npm run dev`: start a local development server.
-- `npm test`: run the automated test suite.
-- `npm run build`: create a production build.
-
-Prefer package-manager scripts, `Makefile` targets, or other single-entry commands.
+There is no npm build step. Static file changes are served directly, but update the query string in `index.html` or `host.html` when changing JS/CSS so mobile browsers do not use stale cached files.
 
 ## Coding Style & Naming Conventions
 
-Use consistent, language-appropriate formatting. Until a formatter is configured, prefer 2-space indentation for web projects and 4-space indentation for Python or similar backend code. Name files with lowercase, descriptive names such as `user-service.ts`, `api_client.py`, or `login-form.test.ts`.
-
-When adding a formatter or linter, commit its configuration and include the exact command here.
+Use 4-space indentation in Python and 2-space indentation in JavaScript, HTML, and CSS. Keep the server authoritative: clients should render state and send user intent, not decide hits, damage, terrain destruction, or turn advancement. Name new tank types with short lowercase keys such as `cheese` or `zombie`, and keep user-facing labels in the relevant metadata maps.
 
 ## Testing Guidelines
 
-Add tests alongside new behavior. Test files should identify the unit or workflow under test, using names such as `*.test.ts`, `*_test.py`, or `test_*.py`. Keep tests deterministic and avoid local machine state.
-
-Document any coverage expectations after a test framework is introduced. At minimum, new features should include happy-path coverage and relevant edge cases.
+For server changes, run `python -m py_compile server.py`, restart the server, then check `/state`. For gameplay changes, test at least one turn through the browser and confirm projectiles collide with visible terrain/platforms only. For UI changes, verify both desktop and phone-sized layouts. When adding a tank, test its projectile, damage, sound trigger, terrain effect, turn completion, and KO behavior.
 
 ## Commit & Pull Request Guidelines
 
-This repository has no existing commit history, so no local convention has been established. Use short, imperative commit messages, for example `Add user model` or `Configure test runner`.
+Use short imperative commit messages, for example `Add cheese splitter tank` or `Tune laser terrain carving`. Pull requests should summarize gameplay changes, list validation performed, and include screenshots or short clips for UI or rendering changes. Mention changed tuning constants when they affect balance.
 
-Pull requests should include a concise description, reason for the change, test results, and screenshots or recordings for UI changes. Link related issues when available.
+## Agent-Specific Instructions
 
-## Security & Configuration Tips
-
-Do not commit secrets, API keys, tokens, or machine-specific configuration. Use ignored local environment files such as `.env.local` and provide a safe example file, such as `.env.example`, when configuration is required.
+Work from `C:\Users\Tower\Desktop\projects\test`, not the transient attachment directory. Do not commit logs, caches, or local generated folders such as `server.out.log`, `server.err.log`, `__pycache__/`, or `NVIDIA Corporation/`. When implementing a tank, update `server.py` weapon behavior, `game.js` rendering/audio metadata, the login tank selector in `index.html`, and any cache-busting query strings together.
