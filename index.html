@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sky Battery</title>
-    <link rel="stylesheet" href="style.css?v=20260616-large-controls" />
+    <link rel="stylesheet" href="style.css?v=20260618-cruise-space" />
   </head>
   <body>
     <div id="loginOverlay" class="login-overlay">
@@ -28,6 +28,8 @@
             <option value="poop">Poop</option>
             <option value="nuke">Nuke</option>
             <option value="cruise">Cruise Missile</option>
+            <option value="cheese">Cheese Splitter</option>
+            <option value="zombie">Zombie Stone</option>
             <option value="super">Super</option>
           </select>
         </label>
@@ -55,23 +57,34 @@
             <span>Move</span>
             <strong id="moveValue">0</strong>
           </div>
-          <label>
-            Angle
-            <input id="angle" type="range" min="5" max="85" value="45" />
-            <span id="angleValue">45</span>
-          </label>
-          <label>
-            Power
-            <input id="power" type="range" min="20" max="100" value="60" />
-            <span id="powerValue">60</span>
-          </label>
-          <button id="fireButton" type="button">Fire</button>
+          <input id="angle" class="hidden-control" type="range" min="5" max="85" value="45" aria-label="Angle" />
+          <input id="power" class="hidden-control" type="range" min="20" max="100" value="60" aria-label="Power" />
+          <div class="power-panel">
+            <div class="control-readouts">
+              <span>Angle <strong id="angleValue">45</strong></span>
+              <span>Power <strong id="powerValue">60</strong></span>
+            </div>
+            <div class="power-charge" aria-label="Power charge">
+              <div id="previousPowerBar" class="power-previous"></div>
+              <div id="chargePowerBar" class="power-current"></div>
+            </div>
+          </div>
+          <div id="aimFireControl" class="aim-fire-control">
+            <div id="aimDial" class="aim-dial" role="slider" aria-label="Angle dial" aria-valuemin="5" aria-valuemax="85" aria-valuenow="45">
+              <svg id="aimGuide" class="aim-guide" viewBox="0 0 100 100" aria-hidden="true">
+                <path id="aimRangePath" class="aim-range-path" d="" />
+                <path id="aimRangeLine" class="aim-range-line" d="" />
+              </svg>
+              <div id="angleIndicator" class="angle-indicator" aria-hidden="true"></div>
+            </div>
+            <button id="fireButton" type="button">Fire</button>
+          </div>
         </section>
       </div>
 
       <p class="hint">Three phones can join on the same Wi-Fi. Movement is limited each turn.</p>
     </main>
 
-    <script src="game.js?v=20260617-artillery-growth"></script>
+    <script src="game.js?v=20260618-cruise-space"></script>
   </body>
 </html>

@@ -94,22 +94,29 @@ body {
 }
 
 .controls {
+  --control-size: 112px;
+  --move-size: 84px;
+  --control-gap: 12px;
   position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 12px;
+  right: 12px;
+  bottom: calc(7px + env(safe-area-inset-bottom));
   z-index: 2;
   display: grid;
-  grid-template-columns: auto minmax(130px, 1fr) minmax(130px, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  gap: 12px;
   align-items: end;
   margin: 0;
-  padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(9, 13, 18, 0.46);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(7px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.hidden-control {
+  display: none;
 }
 
 .label,
@@ -130,14 +137,15 @@ canvas {
 
 .move-controls {
   display: grid;
-  grid-template-columns: 54px 54px;
-  gap: 8px;
+  grid-template-columns: var(--move-size) var(--move-size);
+  gap: var(--control-gap);
+  pointer-events: auto;
 }
 
 .move-button {
   min-width: 0;
-  width: 54px;
-  height: 56px;
+  width: var(--move-size);
+  height: var(--move-size);
   border-radius: 0;
   background: rgba(255, 205, 111, 0.62);
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
@@ -263,15 +271,153 @@ button.danger {
   background: #d93333;
 }
 
+.aim-fire-control {
+  grid-column: 3;
+  display: grid;
+  grid-template-columns: var(--control-size) var(--control-size);
+  align-items: end;
+  justify-items: center;
+  gap: var(--control-gap);
+  width: auto;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.aim-dial {
+  position: relative;
+  width: var(--control-size);
+  height: var(--control-size);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(9, 13, 18, 0.36) 0 18%, rgba(9, 13, 18, 0.12) 19% 57%, rgba(9, 13, 18, 0.38) 58% 100%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 205, 111, 0.08));
+  border: 1px solid rgba(255, 241, 194, 0.34);
+  box-shadow: inset 0 0 22px rgba(255, 205, 111, 0.12), 0 8px 18px rgba(0, 0, 0, 0.24);
+  touch-action: none;
+}
+
+.aim-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.aim-range-path {
+  fill: none;
+  stroke: rgba(255, 205, 111, 0.25);
+  stroke-width: 25;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 7px rgba(255, 205, 111, 0.24));
+}
+
+.aim-range-line {
+  fill: none;
+  stroke: rgba(255, 247, 213, 0.62);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.angle-indicator {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  width: calc(var(--control-size) * 0.43);
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 48, 48, 0.28) 0 58%, #ff3030 58% 100%);
+  box-shadow: 0 0 8px rgba(255, 48, 48, 0.75);
+  transform: rotate(-45deg);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+
+.angle-indicator::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid #ff3030;
+  filter: drop-shadow(0 0 5px rgba(255, 48, 48, 0.78));
+  transform: translateY(-50%);
+}
+
 #fireButton {
-  width: 74px;
-  min-width: 74px;
-  height: 74px;
+  position: relative;
+  z-index: 1;
+  width: var(--control-size);
+  min-width: var(--control-size);
+  height: var(--control-size);
   border-radius: 50%;
   color: #10131a;
-  background: rgba(255, 205, 111, 0.64);
-  border: 1px solid rgba(255, 241, 194, 0.72);
+  background: rgba(255, 205, 111, 0.48);
+  border: 1px solid rgba(255, 241, 194, 0.58);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  touch-action: none;
+}
+
+#fireButton.is-charging {
+  background: rgba(255, 226, 63, 0.82);
+  box-shadow: 0 0 22px rgba(255, 205, 111, 0.42), 0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.power-charge {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(8, 12, 16, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.32);
+}
+
+.power-previous,
+.power-current {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  border-radius: inherit;
+}
+
+.power-previous {
+  background: rgba(216, 229, 240, 0.28);
+}
+
+.power-current {
+  background: linear-gradient(90deg, #ffcd6f, #ff4b3e);
+  box-shadow: 0 0 10px rgba(255, 205, 111, 0.38);
+}
+
+.control-readouts {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  color: rgba(244, 247, 251, 0.8);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.control-readouts strong {
+  color: #ffcd6f;
+}
+
+.power-panel {
+  grid-column: 2;
+  align-self: end;
+  display: grid;
+  align-content: end;
+  gap: 5px;
+  min-width: 0;
+  padding-bottom: 3px;
 }
 
 .reset-overlay {
@@ -349,22 +495,25 @@ button.danger {
   }
 
   .controls {
+    --control-size: 96px;
+    --move-size: 72px;
+    --control-gap: 8px;
     left: 6px;
     right: 6px;
     bottom: calc(6px + env(safe-area-inset-bottom));
-    grid-template-columns: auto minmax(70px, 1fr) minmax(70px, 1fr) 56px;
-    gap: 5px;
-    padding: 6px;
+    grid-template-columns: auto 1fr auto;
+    gap: 7px;
+    padding: 0;
   }
 
   .move-controls {
-    grid-template-columns: 46px 46px;
-    gap: 6px;
+    grid-template-columns: var(--move-size) var(--move-size);
+    gap: var(--control-gap);
   }
 
   .move-button {
-    width: 46px;
-    height: 48px;
+    width: var(--move-size);
+    height: var(--move-size);
   }
 
   .controls label {
@@ -402,10 +551,19 @@ button.danger {
   }
 
   #fireButton {
-    width: 56px;
-    min-width: 56px;
-    height: 56px;
+    width: var(--control-size);
+    min-width: var(--control-size);
+    height: var(--control-size);
     font-size: 11px;
+  }
+
+  .power-charge {
+    height: 12px;
+  }
+
+  .control-readouts {
+    font-size: 9px;
+    gap: 5px;
   }
 
   .reset-overlay {

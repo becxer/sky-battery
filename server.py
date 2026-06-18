@@ -27,12 +27,18 @@ PLATFORM_ATTACH_STEP = 12
 MOVE_LIMIT = 150
 MOVE_STEP = 7.5
 MAX_CLIMB_STEP = 34
+AIM_MIN = 5
+LASER_AIM_MIN = -8
+AIM_MAX = 85
+LASER_CARVE_WIDTH = 8
+LASER_CARVE_LENGTH = 55
+LASER_CARVE_STEP = 7
 PLAYER_GRAVITY = 1800
 PROJECTILE_GRAVITY = 1600
 PROJECTILE_POWER_SCALE = 12.5
 WIND_FORCE = 42
 GROUND_MIN_Y = 225
-GROUND_CONTROL_CLEARANCE = 215
+GROUND_CONTROL_CLEARANCE = 150
 GROUND_MAX_Y = H - GROUND_CONTROL_CLEARANCE
 MIN_PLATFORM_AIR_GAP = 10
 STRIP_RENDER_STEP = 4
@@ -55,7 +61,6 @@ ARTILLERY_MAX_RADIUS = 3.2
 ARTILLERY_GROW_START = 0.15
 ARTILLERY_GROW_DURATION = 2.65
 DUMMY_RESPAWN_SECONDS = 3.0
-POOP_DAMAGE_MULTIPLIER = 1.5
 POOP_MOVE_FACTOR = 0.5
 NUKE_MARK_DAMAGE = 5
 NUKE_MARK_RADIUS_MULTIPLIER = 0.35
@@ -63,14 +68,25 @@ NUKE_MATCH_RADIUS = 18
 NUKE_DAMAGE = 95
 NUKE_RADIUS_MULTIPLIER = ARTILLERY_MAX_RADIUS * 2
 CRUISE_MAX_AGE = 10.0
-CRUISE_SPEED_SCALE = 0.30
-CRUISE_MIN_SPEED = 105
+CRUISE_SPEED_SCALE = 0.60
+CRUISE_MIN_SPEED = 210
 CRUISE_DRAG = 0.990
 CRUISE_TURN_RATE = math.radians(115)
 CRUISE_STEER_TIME = 0.22
 CRUISE_BOOST_TIME = 0.18
 CRUISE_GRAVITY_SCALE = 0.24
 CRUISE_LIFT_ACCEL = 720
+CHEESE_SPLIT_INTERVAL = 0.38
+CHEESE_SPLIT_ANGLE = math.radians(10)
+CHEESE_MAX_SPLIT_LEVEL = 3
+CHEESE_SPLIT_SPEED = 0.96
+ZOMBIE_SPEED = 62
+ZOMBIE_ATTACK_RANGE = 30
+ZOMBIE_ATTACK_INTERVAL = 0.42
+ZOMBIE_ATTACK_DAMAGE = 2
+ZOMBIE_HIT_RADIUS = 17
+ZOMBIE_SPAWN_RADIUS = 62
+ZOMBIE_MAX_COUNT = 8
 TANK_TYPES = {
     "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
     "multi": {"label": "Triple", "damage": 0.75, "radius": 0.82, "shots": [-3, 0, 3], "barrels": [-6, 0, 6]},
@@ -79,9 +95,11 @@ TANK_TYPES = {
     "artillery": {"label": "Howitzer", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "artillery": True},
     "laser": {"label": "Laser", "damage": 1.0, "radius": 0.35, "shots": [0], "barrels": [0], "laser": True},
     "chain": {"label": "Chain", "damage": 0.78, "radius": 0.86, "shots": [0], "barrels": [0], "bouncy": True, "maxBounces": 3},
-    "poop": {"label": "Poop", "damage": 0.28, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
+    "poop": {"label": "Poop", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
     "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
-    "cruise": {"label": "Cruise", "damage": 0.6, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
+    "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
+    "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True},
+    "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
     "super": {
         "label": "Super",
         "damage": 0.22,
@@ -104,6 +122,8 @@ TANK_TYPE_WEIGHTS = {
     "poop": 18,
     "nuke": 10,
     "cruise": 14,
+    "cheese": 18,
+    "zombie": 16,
     "super": 1,
 }
 
@@ -472,6 +492,10 @@ def tank_spec(player):
     return TANK_TYPES.get(player.get("tankType", "normal"), TANK_TYPES["normal"])
 
 
+def aim_min_for_player(player):
+    return LASER_AIM_MIN if player.get("tankType") == "laser" else AIM_MIN
+
+
 def random_tank_type():
     return random.choices(TANK_TYPE_KEYS, weights=[TANK_TYPE_WEIGHTS.get(key, 1) for key in TANK_TYPE_KEYS], k=1)[0]
 
@@ -558,6 +582,22 @@ def projectile_path_hit(previous_x, previous_y, current_x, current_y):
     return None
 
 
+def projectile_zombie_hit(previous_x, previous_y, current_x, current_y):
+    zombies = state.get("zombies", [])
+    if not zombies:
+        return None
+    distance = math.hypot(current_x - previous_x, current_y - previous_y)
+    steps = max(2, math.ceil(distance / 3))
+    for i in range(1, steps + 1):
+        t = i / steps
+        x = previous_x + (current_x - previous_x) * t
+        y = previous_y + (current_y - previous_y) * t
+        for index, zombie in enumerate(zombies):
+            if math.hypot(zombie["x"] - x, zombie["y"] - 12 - y) <= ZOMBIE_HIT_RADIUS:
+                return index, x, y
+    return None
+
+
 def raycast_laser(owner, start_x, start_y, angle, max_distance=1600):
     step = 3
     distance = 0
@@ -568,6 +608,9 @@ def raycast_laser(owner, start_x, start_y, angle, max_distance=1600):
             return {"type": "air", "x": x, "y": y}
         if solid_at(x, y):
             return {"type": "solid", "x": x, "y": y}
+        for index, zombie in enumerate(state.get("zombies", [])):
+            if math.hypot(zombie["x"] - x, zombie["y"] - 12 - y) <= ZOMBIE_HIT_RADIUS:
+                return {"type": "zombie", "x": x, "y": y, "zombie": index}
         for index, player in enumerate(state["players"]):
             if index == owner or player["health"] <= 0:
                 continue
@@ -724,6 +767,7 @@ state = {
     "projectiles": [],
     "particles": [],
     "effects": [],
+    "zombies": [],
     "nukeMarks": [],
     "wind": 0,
     "skyMode": random_sky_mode(),
@@ -755,6 +799,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     set_projectiles([])
     state["particles"] = []
     state["effects"] = []
+    state["zombies"] = []
     state["nukeMarks"] = []
     state["wind"] = round(random.uniform(-2.8, 2.8), 2)
     state["skyMode"] = random_sky_mode()
@@ -770,6 +815,7 @@ def recreate_world():
     set_projectiles([])
     state["particles"] = []
     state["effects"] = []
+    state["zombies"] = []
     state["nukeMarks"] = []
     state["winner"] = None
     state["worldVersion"] += 1
@@ -850,8 +896,12 @@ def fire_laser(player, owner):
     })
     sounds.append("laser")
     if hit["type"] == "solid":
-        carve_crater(hit["x"], hit["y"], 8)
-        damage_platforms(hit["x"], hit["y"], 9)
+        carve_laser_path(hit["x"], hit["y"], angle)
+    elif hit["type"] == "zombie":
+        zombie_index = hit.get("zombie", -1)
+        if 0 <= zombie_index < len(state.get("zombies", [])):
+            state["zombies"].pop(zombie_index)
+        sounds.append("zombiedie")
     elif hit["type"] == "player":
         target = state["players"][hit["player"]]
         target["health"] -= 42
@@ -910,6 +960,11 @@ def fire_for(client_id):
             "bouncy": bool(spec.get("bouncy")),
             "bounces": 0,
             "maxBounces": spec.get("maxBounces", 0),
+            "cheese": bool(spec.get("cheese")),
+            "cheeseLevel": 0,
+            "cheeseMaxLevel": CHEESE_MAX_SPLIT_LEVEL if spec.get("cheese") else 0,
+            "nextSplitAge": CHEESE_SPLIT_INTERVAL if spec.get("cheese") else None,
+            "zombie": bool(spec.get("zombie")),
             "effect": spec.get("effect"),
             "locked": False,
         })
@@ -1012,6 +1067,18 @@ def damage_platforms(x, y, radius):
     state["platforms"] = remaining
 
 
+def carve_laser_path(x, y, angle):
+    steps = max(2, math.ceil(LASER_CARVE_LENGTH / LASER_CARVE_STEP))
+    for step in range(steps + 1):
+        distance = -LASER_CARVE_WIDTH + step * LASER_CARVE_STEP
+        px = x + math.cos(angle) * distance
+        py = y + math.sin(angle) * distance
+        if px < -LASER_CARVE_WIDTH or px > W + LASER_CARVE_WIDTH or py < -80 or py > H + LASER_CARVE_LENGTH:
+            continue
+        carve_crater(px, py, LASER_CARVE_WIDTH)
+        damage_platforms(px, py, LASER_CARVE_WIDTH + 2)
+
+
 def crater_platform_strip(platform, x, y, radius):
     px = platform["x"]
     py = platform["y"]
@@ -1075,11 +1142,10 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
             else:
                 damage = round(falloff * (36 + impact_speed * 0.032) * damage_multiplier)
             if effect == "poop" and index != owner:
-                previous_poop_damage = player.get("poopDamage", 0)
-                if previous_poop_damage > 0:
-                    damage = max(1, round(previous_poop_damage * POOP_DAMAGE_MULTIPLIER))
+                stacks = max(0, int(player.get("poopStacks", 0))) + 1
+                damage = max(1, round(damage * stacks))
                 player["poopDamage"] = damage
-                player["poopStacks"] = max(0, int(player.get("poopStacks", 0))) + 1
+                player["poopStacks"] = stacks
             player["health"] -= damage
             if player["health"] <= 0:
                 player["health"] = 0
@@ -1236,6 +1302,109 @@ def update_dummy_respawns(dt):
             player["respawnTimer"] = timer
 
 
+def spawn_zombie(owner, target, x, y):
+    if target < 0 or target >= len(state["players"]):
+        return
+    target_player = state["players"][target]
+    target_floor = supported_floor_y(target_player["x"], target_player["y"])
+    side = -1 if x < target_player["x"] else 1
+    candidates = [
+        clamp(target_player["x"] + side * 18, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN),
+        clamp(target_player["x"] - side * 18, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN),
+        target_player["x"],
+    ]
+    spawn_x = target_player["x"]
+    floor = target_floor
+    for candidate_x in candidates:
+        candidate_floor = supported_floor_y(candidate_x, target_player["y"])
+        if abs(candidate_floor - target_floor) <= 28:
+            spawn_x = candidate_x
+            floor = candidate_floor
+            break
+    zombie = {
+        "x": spawn_x,
+        "y": floor - 2,
+        "target": target,
+        "owner": owner,
+        "dir": 1,
+        "attackCooldown": 0.18,
+        "age": 0,
+    }
+    state["zombies"] = (state.get("zombies", []) + [zombie])[-ZOMBIE_MAX_COUNT:]
+    sounds.append("zombie")
+
+
+def handle_zombie_impact(projectile, x, y, speed):
+    damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(projectile)
+    explode(
+        x,
+        y,
+        speed,
+        damage_multiplier,
+        radius_multiplier,
+        base_damage,
+        projectile.get("effect"),
+        projectile.get("owner"),
+        advance_turn=False,
+    )
+    spawned = False
+    for index, player in enumerate(state["players"]):
+        if player["health"] <= 0:
+            continue
+        if math.hypot(player["x"] - x, player["y"] - y) <= ZOMBIE_SPAWN_RADIUS:
+            spawn_zombie(projectile.get("owner"), index, x, y)
+            spawned = True
+    if spawned:
+        sounds.append("damage")
+
+
+def update_zombies(dt):
+    zombies = state.get("zombies", [])
+    if not zombies:
+        return
+    next_zombies = []
+    retired = False
+    for zombie in zombies:
+        target_index = int(zombie.get("target", -1))
+        if target_index < 0 or target_index >= len(state["players"]):
+            continue
+        target = state["players"][target_index]
+        if target["health"] <= 0:
+            continue
+
+        zombie["age"] = zombie.get("age", 0) + dt
+        dx = target["x"] - zombie["x"]
+        direction = -1 if dx < 0 else 1
+        zombie["dir"] = direction
+        step = clamp(dx, -ZOMBIE_SPEED * dt, ZOMBIE_SPEED * dt)
+        if abs(dx) > ZOMBIE_ATTACK_RANGE * 0.55:
+            zombie["x"] = clamp(zombie["x"] + step, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+        floor = supported_floor_y(zombie["x"], zombie.get("y")) - 2
+        zombie["y"] += (floor - zombie["y"]) * 0.45
+
+        zombie["attackCooldown"] = max(0, zombie.get("attackCooldown", 0) - dt)
+        close = abs(target["x"] - zombie["x"]) <= ZOMBIE_ATTACK_RANGE and abs(target["y"] - zombie["y"]) <= 42
+        if close and zombie["attackCooldown"] <= 0:
+            target["health"] -= ZOMBIE_ATTACK_DAMAGE
+            target["vx"] += direction * 2.2
+            target["av"] += direction * 0.035
+            zombie["attackCooldown"] = ZOMBIE_ATTACK_INTERVAL
+            sounds.append("zombiehit")
+            if target["health"] <= 0:
+                target["health"] = 0
+                retired = True
+                sounds.append("retire")
+        next_zombies.append(zombie)
+
+    state["zombies"] = next_zombies[:ZOMBIE_MAX_COUNT]
+    if retired and player_count() > 1:
+        alive = [i for i, player in enumerate(state["players"]) if player["health"] > 0]
+        if len(alive) == 1:
+            state["winner"] = alive[0]
+        elif not alive:
+            state["winner"] = state["current"]
+
+
 def angle_delta(target, current):
     return (target - current + math.pi) % (math.pi * 2) - math.pi
 
@@ -1283,6 +1452,36 @@ def update_cruise_projectile(p, dt):
     p["angle"] = angle
 
 
+def split_cheese_projectile(p):
+    if not p.get("cheese"):
+        return None
+    level = int(p.get("cheeseLevel", 0))
+    max_level = int(p.get("cheeseMaxLevel", CHEESE_MAX_SPLIT_LEVEL))
+    next_split = p.get("nextSplitAge")
+    if next_split is None or level >= max_level or p.get("age", 0) < next_split:
+        return None
+
+    speed = max(180, math.hypot(p["vx"], p["vy"]) * CHEESE_SPLIT_SPEED)
+    base_angle = math.atan2(p["vy"], p["vx"])
+    spread = CHEESE_SPLIT_ANGLE * (1 + level * 0.35)
+    children = []
+    for child_index, side in enumerate((-1, 1)):
+        angle = base_angle + side * spread
+        child = p.copy()
+        child["x"] = p["x"] + math.cos(angle) * 5
+        child["y"] = p["y"] + math.sin(angle) * 5
+        child["vx"] = math.cos(angle) * speed
+        child["vy"] = math.sin(angle) * speed - (18 if level == 0 else 8)
+        child["angle"] = angle
+        child["av"] = side * (0.32 + level * 0.1)
+        child["cheeseLevel"] = level + 1
+        child["nextSplitAge"] = p.get("age", 0) + CHEESE_SPLIT_INTERVAL
+        child["shotIndex"] = int(p.get("shotIndex", 0)) * 2 + child_index
+        children.append(child)
+    sounds.append("cheese")
+    return children
+
+
 def update_projectiles(dt):
     projectiles = state.get("projectiles", [])
     if not projectiles:
@@ -1324,11 +1523,39 @@ def update_projectiles(dt):
         if p["x"] < -40 or p["x"] > W + 40 or p["y"] > H + 60:
             continue
 
+        zombie_hit = projectile_zombie_hit(previous_x, previous_y, p["x"], p["y"])
+        if zombie_hit is not None:
+            zombie_index, zombie_x, zombie_y = zombie_hit
+            if 0 <= zombie_index < len(state.get("zombies", [])):
+                state["zombies"].pop(zombie_index)
+            sounds.append("zombiedie")
+            if p.get("tankType") == "nuke":
+                handle_nuke_impact(p, zombie_x, zombie_y, speed + 10)
+            else:
+                damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
+                explode(
+                    zombie_x,
+                    zombie_y,
+                    speed + 10,
+                    damage_multiplier,
+                    radius_multiplier,
+                    base_damage,
+                    p.get("effect"),
+                    p.get("owner"),
+                    advance_turn=False,
+                )
+            exploded = True
+            continue
+
         hit = projectile_path_hit(previous_x, previous_y, p["x"], p["y"])
         if hit is not None:
             hit_x, hit_y = hit
             if p.get("tankType") == "nuke":
                 handle_nuke_impact(p, hit_x, hit_y, speed)
+                exploded = True
+                continue
+            if p.get("zombie"):
+                handle_zombie_impact(p, hit_x, hit_y, speed)
                 exploded = True
                 continue
             if p.get("bouncy") and p.get("bounces", 0) < p.get("maxBounces", 0):
@@ -1352,12 +1579,18 @@ def update_projectiles(dt):
 
         direct_hit = False
         if p["age"] > 0.18:
-            for player in state["players"]:
+            for index, player in enumerate(state["players"]):
                 if player["health"] <= 0:
                     continue
-                if math.hypot(player["x"] - p["x"], player["y"] - p["y"]) < TANK_CONTACT_RADIUS:
+                contact_radius = ZOMBIE_SPAWN_RADIUS if p.get("zombie") and index != p.get("owner") else TANK_CONTACT_RADIUS
+                if math.hypot(player["x"] - p["x"], player["y"] - p["y"]) < contact_radius:
                     if p.get("tankType") == "nuke":
                         handle_nuke_impact(p, p["x"], p["y"], speed + 18)
+                        exploded = True
+                        direct_hit = True
+                        break
+                    if p.get("zombie"):
+                        handle_zombie_impact(p, p["x"], p["y"], speed + 18)
                         exploded = True
                         direct_hit = True
                         break
@@ -1377,7 +1610,11 @@ def update_projectiles(dt):
                     direct_hit = True
                     break
         if not direct_hit:
-            survivors.append(p)
+            cheese_children = split_cheese_projectile(p)
+            if cheese_children:
+                survivors.extend(cheese_children)
+            else:
+                survivors.append(p)
 
     set_projectiles(survivors)
     if not survivors and state["winner"] is None:
@@ -1427,6 +1664,7 @@ def snapshot():
         "projectiles": state.get("projectiles", []),
         "particles": state["particles"],
         "effects": state.get("effects", []),
+        "zombies": state.get("zombies", []),
         "nukeMarks": state.get("nukeMarks", []),
         "wind": state["wind"],
         "skyMode": state["skyMode"],
@@ -1457,6 +1695,7 @@ def game_loop():
                 for player in state["players"]:
                     update_player(player, 1 / 60)
                 update_dummy_respawns(1 / 60)
+                update_zombies(1 / 60)
                 update_projectiles(1 / 60)
             update_particles()
             update_effects()
@@ -1483,7 +1722,7 @@ class Handler(SimpleHTTPRequestHandler):
                 client = clients.get(str(body.get("id", "")))
                 if state["phase"] == "playing" and client and client["seat"] in range(player_count()):
                     player = state["players"][client["seat"]]
-                    player["aim"] = clamp(float(body.get("angle", player["aim"])), 5, 85)
+                    player["aim"] = clamp(float(body.get("angle", player["aim"])), aim_min_for_player(player), AIM_MAX)
                     player["power"] = clamp(float(body.get("power", player["power"])), 20, 100)
                 self.send_json({"ok": True})
             elif self.path == "/fire":

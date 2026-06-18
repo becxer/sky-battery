@@ -16,12 +16,25 @@ const moveRightButton = document.getElementById("moveRightButton");
 const moveValue = document.getElementById("moveValue");
 const fireButton = document.getElementById("fireButton");
 const resetButton = document.getElementById("resetButton");
+const aimFireControl = document.getElementById("aimFireControl");
+const aimDial = document.getElementById("aimDial");
+const aimRangePath = document.getElementById("aimRangePath");
+const aimRangeLine = document.getElementById("aimRangeLine");
+const angleIndicator = document.getElementById("angleIndicator");
+const previousPowerBar = document.getElementById("previousPowerBar");
+const chargePowerBar = document.getElementById("chargePowerBar");
 
 const W = canvas.width;
 const H = canvas.height;
 const TANK_SCALE = 0.5;
 const STRIP_PLATFORM_EXTRA = 8;
 const ISLAND_PLATFORM_EXTRA = 5;
+const AIM_MIN = 5;
+const LASER_AIM_MIN = -8;
+const AIM_MAX = 85;
+const POWER_MIN = 20;
+const POWER_MAX = 100;
+const POWER_CHARGE_MS = 3600;
 const ARTILLERY_GROW_START = 0.15;
 const ARTILLERY_GROW_DURATION = 2.65;
 const TANK_TYPE_META = {
@@ -35,6 +48,8 @@ const TANK_TYPE_META = {
   poop: { label: "P", name: "똥탱크", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
+  cheese: { label: "CH", name: "치즈 탱크", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
+  zombie: { label: "Z", name: "좀비 탱크", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
   super: { label: "S", name: "슈퍼탱크", color: "#ffe23f", shell: "#39ff14", glow: "#fff1a8" },
 };
 const SUPER_MISSILE_COLORS = ["#ff3030", "#ff9f1a", "#ffe23f", "#39ff14", "#4aa3ff"];
@@ -69,6 +84,16 @@ let cloudOffset = 0;
 let lastRenderTime = performance.now();
 let seenWorldVersion = null;
 let cruiseBoostTimer = null;
+let isChargingShot = false;
+let chargeStartTime = 0;
+let chargeFrame = null;
+let chargePower = Number(powerInput.value);
+let previousPowerValue = Number(powerInput.value);
+let isDialDragging = false;
+let isSpaceCharging = false;
+let isSpaceCruiseBoosting = false;
+let moveHoldTimer = null;
+let moveHoldDirection = 0;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -209,6 +234,17 @@ function playSound(name) {
   } else if (name === "cruise") {
     tone(180, 0.22, "sawtooth", 0.065, 120);
     setTimeout(() => tone(260, 0.18, "triangle", 0.04, 190), 80);
+  } else if (name === "cheese") {
+    tone(720, 0.06, "triangle", 0.045, 980);
+    setTimeout(() => tone(920, 0.05, "sine", 0.035, 1220), 55);
+  } else if (name === "zombie") {
+    tone(128, 0.2, "sawtooth", 0.07, 82);
+    setTimeout(() => tone(220, 0.12, "triangle", 0.045, 130), 120);
+  } else if (name === "zombiehit") {
+    tone(260, 0.045, "square", 0.04, 180);
+  } else if (name === "zombiedie") {
+    tone(520, 0.08, "triangle", 0.05, 760);
+    setTimeout(() => tone(240, 0.1, "sine", 0.035, 180), 80);
   } else if (name === "retire") {
     tone(760, 0.12, "sine", 0.075, 1140);
     setTimeout(() => tone(520, 0.14, "triangle", 0.065, 860), 95);
@@ -323,6 +359,75 @@ function activeCruiseProjectile() {
   return currentProjectiles().find((projectile) => projectile.cruise && projectile.owner === seat);
 }
 
+function canFireShot() {
+  return latest?.phase === "playing"
+    && seat === latest.current
+    && currentProjectiles().length === 0
+    && latest.winner === null;
+}
+
+function normalizeRadians(angle) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+function normalizeDegrees(angle) {
+  return ((angle % 360) + 360) % 360;
+}
+
+function clockwiseDeltaDegrees(from, to) {
+  return normalizeDegrees(to - from);
+}
+
+function dialPoint(angleDegrees, radius = 43) {
+  const radians = angleDegrees * Math.PI / 180;
+  return {
+    x: 50 + Math.cos(radians) * radius,
+    y: 50 + Math.sin(radians) * radius,
+  };
+}
+
+function dialArcPath(startDegrees, sweepDegrees, radius = 43) {
+  const start = dialPoint(startDegrees, radius);
+  const end = dialPoint(startDegrees + sweepDegrees, radius);
+  const largeArc = sweepDegrees > 180 ? 1 : 0;
+  return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
+}
+
+function updateAimGuide(player) {
+  if (!player || !aimRangePath || !aimRangeLine) return;
+  const minPlayer = { ...player, aim: aimMinForPlayer(player) };
+  const maxPlayer = { ...player, aim: AIM_MAX };
+  const minAngle = barrelAngle(minPlayer) * 180 / Math.PI;
+  const maxAngle = barrelAngle(maxPlayer) * 180 / Math.PI;
+  const minToMax = clockwiseDeltaDegrees(minAngle, maxAngle);
+  const startAngle = minToMax <= 180 ? minAngle : maxAngle;
+  const sweepAngle = minToMax <= 180 ? minToMax : clockwiseDeltaDegrees(maxAngle, minAngle);
+  const path = dialArcPath(startAngle, sweepAngle);
+  aimRangePath.setAttribute("d", path);
+  aimRangeLine.setAttribute("d", path);
+  aimDial?.style.setProperty("--aim-range-sweep", `${Math.round(sweepAngle)}deg`);
+}
+
+function setPowerGauge(current = Number(powerInput.value), previous = previousPowerValue) {
+  const currentRatio = clamp((current - POWER_MIN) / (POWER_MAX - POWER_MIN), 0, 1);
+  const previousRatio = clamp((previous - POWER_MIN) / (POWER_MAX - POWER_MIN), 0, 1);
+  if (chargePowerBar) chargePowerBar.style.width = `${currentRatio * 100}%`;
+  if (previousPowerBar) previousPowerBar.style.width = `${previousRatio * 100}%`;
+}
+
+function updateAimDial(player = latest?.players?.[latest?.current]) {
+  if (!player || !angleIndicator) return;
+  const dialPlayer = { ...player, aim: Number(angleInput.value) };
+  const angle = barrelAngle(dialPlayer) * 180 / Math.PI;
+  angleIndicator.style.transform = `rotate(${angle}deg)`;
+  updateAimGuide(dialPlayer);
+  if (aimDial) {
+    aimDial.setAttribute("aria-valuemin", String(aimMinForPlayer(player)));
+    aimDial.setAttribute("aria-valuemax", String(AIM_MAX));
+    aimDial.setAttribute("aria-valuenow", String(Math.round(Number(angleInput.value))));
+  }
+}
+
 function updateHud() {
   if (!latest) return;
   if (latest.phase !== "playing") {
@@ -348,31 +453,46 @@ function updateHud() {
   moveLeftButton.disabled = !(myTurn || canSteer);
   moveRightButton.disabled = !(myTurn || canSteer);
   fireButton.disabled = !(myTurn || canSteer);
-  fireButton.textContent = canSteer ? "Lift" : "Fire";
+  if (!isChargingShot) fireButton.textContent = canSteer ? "Lift" : "Fire";
   angleInput.disabled = !myTurn;
   powerInput.disabled = !myTurn;
-  if (!canSteer) stopCruiseBoost();
+  if (!canSteer) {
+    isSpaceCruiseBoosting = false;
+    stopCruiseBoost();
+  }
+  if (!isChargingShot) setPowerGauge(Number(powerInput.value), previousPowerValue);
+  updateAimDial(latest.players[latest.current]);
 
 }
 
 function syncControlsFromState() {
   const activePlayer = latest?.players?.[latest.current];
   if (!activePlayer || isAdjustingControls) return;
-  angleInput.value = Math.round(activePlayer.aim);
+  applyAimInputBounds(activePlayer);
+  angleInput.value = Math.round(clamp(activePlayer.aim, aimMinForPlayer(activePlayer), AIM_MAX));
   powerInput.value = Math.round(activePlayer.power);
   angleValue.textContent = angleInput.value;
   powerValue.textContent = powerInput.value;
+  if (!isChargingShot) previousPowerValue = Number(powerInput.value);
+  if (!isChargingShot) setPowerGauge(Number(powerInput.value), previousPowerValue);
+  updateAimDial(activePlayer);
+}
+
+function sendControlsNow(timeoutMs = 2500) {
+  angleValue.textContent = angleInput.value;
+  powerValue.textContent = powerInput.value;
+  updateAimDial(latest?.players?.[latest.current]);
+  setPowerGauge(Number(powerInput.value), previousPowerValue);
+  return postJson("/input", {
+    id: clientId,
+    angle: Number(angleInput.value),
+    power: Number(powerInput.value),
+  }, timeoutMs);
 }
 
 function sendControls() {
   isAdjustingControls = true;
-  angleValue.textContent = angleInput.value;
-  powerValue.textContent = powerInput.value;
-  postJson("/input", {
-    id: clientId,
-    angle: Number(angleInput.value),
-    power: Number(powerInput.value),
-  }, 2500).catch(() => {}).finally(() => {
+  sendControlsNow().catch(() => {}).finally(() => {
     window.setTimeout(() => {
       isAdjustingControls = false;
     }, 120);
@@ -386,6 +506,73 @@ function fire() {
     return;
   }
   postJson("/fire", { id: clientId }).catch(() => {});
+}
+
+function updateShotCharge(now = performance.now()) {
+  if (!isChargingShot) return;
+  const ratio = clamp((now - chargeStartTime) / POWER_CHARGE_MS, 0, 1);
+  chargePower = Math.round(POWER_MIN + (POWER_MAX - POWER_MIN) * ratio);
+  powerInput.value = chargePower;
+  powerValue.textContent = chargePower;
+  setPowerGauge(chargePower, previousPowerValue);
+  if (ratio < 1) {
+    chargeFrame = requestAnimationFrame(updateShotCharge);
+  }
+}
+
+function startShotCharge(event) {
+  if (!canFireShot()) return;
+  event?.preventDefault?.();
+  ensureAudio();
+  isChargingShot = true;
+  previousPowerValue = Number(powerInput.value) || 60;
+  chargePower = POWER_MIN;
+  chargeStartTime = performance.now();
+  powerInput.value = chargePower;
+  powerValue.textContent = chargePower;
+  setPowerGauge(chargePower, previousPowerValue);
+  fireButton.classList.add("is-charging");
+  fireButton.textContent = "Hold";
+  if (event?.pointerId !== undefined) {
+    try {
+      fireButton.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // Pointer capture is best-effort on older mobile browsers.
+    }
+  }
+  if (chargeFrame) cancelAnimationFrame(chargeFrame);
+  chargeFrame = requestAnimationFrame(updateShotCharge);
+}
+
+async function releaseShotCharge(event) {
+  if (!isChargingShot) return;
+  event?.preventDefault?.();
+  isChargingShot = false;
+  if (chargeFrame) cancelAnimationFrame(chargeFrame);
+  chargeFrame = null;
+  fireButton.classList.remove("is-charging");
+  fireButton.textContent = "Fire";
+  powerInput.value = Math.round(chargePower);
+  powerValue.textContent = powerInput.value;
+  setPowerGauge(Number(powerInput.value), previousPowerValue);
+  try {
+    await sendControlsNow(1800);
+  } catch (error) {
+    // Fire anyway; the next state sync will correct the UI if the input post failed.
+  }
+  postJson("/fire", { id: clientId }).catch(() => {});
+}
+
+function cancelShotCharge() {
+  if (!isChargingShot) return;
+  isChargingShot = false;
+  if (chargeFrame) cancelAnimationFrame(chargeFrame);
+  chargeFrame = null;
+  fireButton.classList.remove("is-charging");
+  fireButton.textContent = "Fire";
+  powerInput.value = Math.round(previousPowerValue);
+  powerValue.textContent = powerInput.value;
+  setPowerGauge(Number(powerInput.value), previousPowerValue);
 }
 
 function move(direction) {
@@ -404,8 +591,8 @@ function startCruiseBoost(event) {
   if (!activeCruiseProjectile()) return;
   event.preventDefault();
   ensureAudio();
+  if (cruiseBoostTimer) return;
   boostCruise();
-  stopCruiseBoost();
   cruiseBoostTimer = window.setInterval(() => {
     if (activeCruiseProjectile()) {
       boostCruise();
@@ -426,6 +613,44 @@ function moveOrSteer(direction) {
     steer(direction);
   } else {
     move(direction);
+  }
+}
+
+function stopMoveHold() {
+  if (!moveHoldTimer) return;
+  window.clearInterval(moveHoldTimer);
+  moveHoldTimer = null;
+  moveHoldDirection = 0;
+}
+
+function startMoveHoldDirection(direction) {
+  const button = direction < 0 ? moveLeftButton : moveRightButton;
+  if (button.disabled) return;
+  if (moveHoldDirection === direction && moveHoldTimer) return;
+  ensureAudio();
+  stopMoveHold();
+  moveHoldDirection = direction;
+  moveOrSteer(direction);
+  moveHoldTimer = window.setInterval(() => {
+    if (!moveHoldDirection) return;
+    const activeButton = moveHoldDirection < 0 ? moveLeftButton : moveRightButton;
+    if (activeButton.disabled) {
+      stopMoveHold();
+      return;
+    }
+    moveOrSteer(moveHoldDirection);
+  }, 80);
+}
+
+function startMoveHold(event, direction) {
+  if (event.currentTarget.disabled) return;
+  event.preventDefault();
+  event.stopPropagation();
+  startMoveHoldDirection(direction);
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch (error) {
+    // Pointer capture is best-effort on older mobile browsers.
   }
 }
 
@@ -843,6 +1068,47 @@ function drawNameTag(player, index) {
   ctx.restore();
 }
 
+function formatPoopDamageMultiplier(stacks) {
+  return String(Math.max(1, stacks));
+}
+
+function drawPoopStacks() {
+  if (!latest) return;
+  latest.players.forEach((player) => {
+    const stacks = Math.max(0, Math.floor(player.poopStacks || 0));
+    if (!stacks || player.health <= 0) return;
+
+    const label = `똥 x${formatPoopDamageMultiplier(stacks)}`;
+    ctx.save();
+    ctx.font = "800 11px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const width = Math.max(62, ctx.measureText(label).width + 25);
+    const height = 18;
+    const x = clamp(player.x, width / 2 + 6, W - width / 2 - 6);
+    const nameY = Math.max(22, player.y - 42);
+    const y = Math.max(12, nameY - 24);
+
+    ctx.fillStyle = "rgba(75, 44, 24, 0.92)";
+    roundRect(x - width / 2, y - height / 2, width, height, 7);
+    ctx.fill();
+    ctx.strokeStyle = "#d59b55";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = "#8b5a2b";
+    ctx.beginPath();
+    ctx.arc(x - width / 2 + 9, y + 2, 4.2, 0, Math.PI * 2);
+    ctx.arc(x - width / 2 + 14, y - 2, 4.8, 0, Math.PI * 2);
+    ctx.arc(x - width / 2 + 19, y + 2, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffdca8";
+    ctx.fillText(label, x - width / 2 + 24, y + 0.2);
+    ctx.restore();
+  });
+}
+
 function drawMoveBars() {
   if (!latest) return;
   latest.players.forEach((player, index) => {
@@ -884,6 +1150,52 @@ function tankType(player) {
 
 function tankMeta(player) {
   return TANK_TYPE_META[tankType(player)] || TANK_TYPE_META.normal;
+}
+
+function aimMinForPlayer(player) {
+  return tankType(player) === "laser" ? LASER_AIM_MIN : AIM_MIN;
+}
+
+function applyAimInputBounds(player) {
+  const min = aimMinForPlayer(player || {});
+  angleInput.min = String(min);
+  angleInput.max = String(AIM_MAX);
+  if (Number(angleInput.value) < min) angleInput.value = min;
+  if (Number(angleInput.value) > AIM_MAX) angleInput.value = AIM_MAX;
+}
+
+function setAimFromDialPointer(event) {
+  const activePlayer = latest?.players?.[latest.current];
+  if (!activePlayer || angleInput.disabled || !aimDial) return;
+  event.preventDefault();
+  const rect = aimDial.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const desired = Math.atan2(event.clientY - centerY, event.clientX - centerX);
+  const local = normalizeRadians(desired - (activePlayer.angleBody || 0));
+  const aimRadians = activePlayer.dir === 1
+    ? normalizeRadians(-local)
+    : normalizeRadians(local - Math.PI);
+  const aim = clamp(Math.round(aimRadians * 180 / Math.PI), aimMinForPlayer(activePlayer), AIM_MAX);
+  angleInput.value = aim;
+  angleValue.textContent = aim;
+  updateAimDial(activePlayer);
+  sendControls();
+}
+
+function startAimDialDrag(event) {
+  if (angleInput.disabled) return;
+  isDialDragging = true;
+  try {
+    aimDial.setPointerCapture(event.pointerId);
+  } catch (error) {
+    // Pointer capture is best-effort on older mobile browsers.
+  }
+  setAimFromDialPointer(event);
+}
+
+function stopAimDialDrag() {
+  isDialDragging = false;
 }
 
 function mixHexColor(from, to, amount) {
@@ -1005,6 +1317,48 @@ function drawTankTypeTrim(player) {
     ctx.beginPath();
     ctx.arc(0, -22, 6, 0, Math.PI * 2);
     ctx.fill();
+  } else if (type === "cheese") {
+    ctx.fillStyle = "#ffd84d";
+    ctx.beginPath();
+    ctx.moveTo(-26, -15);
+    ctx.lineTo(24, -31);
+    ctx.lineTo(17, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#b98418";
+    [[-9, -18, 3], [7, -21, 2.6], [15, -14, 2.2]].forEach(([x, y, r]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.strokeStyle = "rgba(255, 246, 166, 0.78)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-23, -13);
+    ctx.lineTo(18, -27);
+    ctx.stroke();
+  } else if (type === "zombie") {
+    const rock = ctx.createRadialGradient(-6, -28, 4, 0, -24, 24);
+    rock.addColorStop(0, "#9aa094");
+    rock.addColorStop(0.62, "#5d6158");
+    rock.addColorStop(1, "#252922");
+    ctx.fillStyle = rock;
+    ctx.beginPath();
+    ctx.ellipse(0, -23, 28, 18, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(180, 190, 174, 0.55)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = "#6fe36f";
+    ctx.beginPath();
+    ctx.arc(-4, -23, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#17351a";
+    [-7, -1].forEach((x) => {
+      ctx.beginPath();
+      ctx.arc(x, -25, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
   } else if (type === "artillery") {
     ctx.globalAlpha = 0.74;
     ctx.fillStyle = typeColor;
@@ -1056,6 +1410,10 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 26, thickness: 8, tip: 6, accent: "#8b5a2b" });
   } else if (type === "nuke") {
     drawBarrel(player, undefined, 0, { length: 38, thickness: 9, tip: 7, accent: "#ff3030" });
+  } else if (type === "cheese") {
+    drawBarrel(player, undefined, 0, { length: 31, thickness: 8, tip: 6, accent: "#ffd84d" });
+  } else if (type === "zombie") {
+    drawBarrel(player, undefined, 0, { length: 32, thickness: 9, tip: 6, accent: "#5d6158" });
   } else if (type === "artillery") {
     drawBarrel(player, undefined, 0, { length: 40, thickness: 8, tip: 5, accent: artilleryColor(player) });
   } else {
@@ -1140,6 +1498,8 @@ function projectileTrailColor(p) {
   if (p.tankType === "chain") return "rgba(220, 230, 240, 0.86)";
   if (p.tankType === "poop") return "rgba(132, 82, 38, 0.84)";
   if (p.tankType === "nuke") return "rgba(255, 48, 48, 0.9)";
+  if (p.tankType === "cheese") return "rgba(255, 216, 77, 0.92)";
+  if (p.tankType === "zombie") return "rgba(111, 227, 111, 0.84)";
   return p.locked ? "rgba(57, 255, 20, 0.92)" : "rgba(255, 215, 120, 0.78)";
 }
 
@@ -1263,6 +1623,55 @@ function drawNukeProjectile() {
   return true;
 }
 
+function drawCheeseProjectile(p) {
+  const level = Math.max(0, Math.min(3, p.cheeseLevel || 0));
+  const scale = 1 - level * 0.08;
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffd84d";
+  ctx.beginPath();
+  ctx.moveTo(10, 0);
+  ctx.lineTo(-8, -7);
+  ctx.lineTo(-5, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#fff2a0";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = "#b98418";
+  [[-3, -2, 1.6], [1.8, 1.5, 1.2], [-5, 3.6, 1]].forEach(([x, y, r]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+  return true;
+}
+
+function drawZombieStoneProjectile() {
+  const rock = ctx.createRadialGradient(-3, -3, 1, 0, 0, 9);
+  rock.addColorStop(0, "#b7beb0");
+  rock.addColorStop(0.58, "#696f66");
+  rock.addColorStop(1, "#242921");
+  ctx.fillStyle = rock;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 9, 7, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(185, 195, 178, 0.55)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(111, 227, 111, 0.76)";
+  ctx.beginPath();
+  ctx.arc(-2, -1, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#163018";
+  ctx.beginPath();
+  ctx.arc(-3.2, -2, 0.7, 0, Math.PI * 2);
+  ctx.arc(-0.8, -2, 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  return true;
+}
+
 function drawArtilleryProjectile(p) {
   const tint = artilleryProjectileColor(p);
   const size = artilleryProjectileSize(p);
@@ -1368,6 +1777,12 @@ function drawProjectileAsset(p, meta, flightAngle) {
   if (type === "nuke") {
     return drawNukeProjectile();
   }
+  if (type === "cheese") {
+    return drawCheeseProjectile(p);
+  }
+  if (type === "zombie") {
+    return drawZombieStoneProjectile();
+  }
   if (type === "cruise") {
     return drawCruiseProjectile(p);
   }
@@ -1407,6 +1822,47 @@ function drawOneProjectile(p) {
   ctx.rotate(flightAngle);
   if (!drawProjectileAsset(p, meta, flightAngle)) drawFallbackProjectile(meta);
   ctx.restore();
+}
+
+function drawZombies() {
+  (latest?.zombies || []).forEach((zombie) => {
+    const age = zombie.age || 0;
+    const bob = Math.sin(age * 10) * 1.6;
+    const dir = zombie.dir === -1 ? -1 : 1;
+    ctx.save();
+    ctx.translate(zombie.x, zombie.y + bob);
+    ctx.scale(dir, 1);
+    ctx.fillStyle = "rgba(25, 22, 18, 0.28)";
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 13, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6fe36f";
+    roundRect(-7, -21, 14, 19, 5);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -26, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#214321";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-7, -15);
+    ctx.lineTo(-14, -9 + Math.sin(age * 18) * 4);
+    ctx.moveTo(7, -15);
+    ctx.lineTo(15, -12 + Math.cos(age * 18) * 4);
+    ctx.stroke();
+    ctx.fillStyle = "#133018";
+    ctx.beginPath();
+    ctx.arc(-3, -28, 1.3, 0, Math.PI * 2);
+    ctx.arc(3, -28, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(12, 40, 14, 0.8)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-3, -23);
+    ctx.lineTo(3, -22);
+    ctx.stroke();
+    ctx.restore();
+  });
 }
 
 function drawNukeMarks() {
@@ -1587,9 +2043,11 @@ function render() {
     drawPlatforms();
     drawNukeMarks();
     drawHealthBars();
+    drawZombies();
     latest.players.forEach(drawTank);
     drawMoveBars();
     latest.players.forEach(drawNameTag);
+    drawPoopStacks();
     drawProjectile();
     drawEffects();
     drawParticles();
@@ -1615,56 +2073,128 @@ loginForm.addEventListener("submit", (event) => {
 
 angleInput.addEventListener("input", sendControls);
 powerInput.addEventListener("input", sendControls);
-moveLeftButton.addEventListener("click", () => moveOrSteer(-1));
-moveRightButton.addEventListener("click", () => moveOrSteer(1));
-fireButton.addEventListener("pointerdown", startCruiseBoost);
-fireButton.addEventListener("pointerup", stopCruiseBoost);
-fireButton.addEventListener("pointerleave", stopCruiseBoost);
-fireButton.addEventListener("pointercancel", stopCruiseBoost);
-fireButton.addEventListener("click", (event) => {
+moveLeftButton.addEventListener("pointerdown", (event) => startMoveHold(event, -1));
+moveRightButton.addEventListener("pointerdown", (event) => startMoveHold(event, 1));
+[moveLeftButton, moveRightButton].forEach((button) => {
+  button.addEventListener("pointerup", stopMoveHold);
+  button.addEventListener("pointercancel", stopMoveHold);
+  button.addEventListener("lostpointercapture", stopMoveHold);
+  button.addEventListener("click", (event) => event.preventDefault());
+});
+aimDial.addEventListener("pointerdown", startAimDialDrag);
+aimDial.addEventListener("pointermove", (event) => {
+  if (isDialDragging) setAimFromDialPointer(event);
+});
+aimDial.addEventListener("pointerup", stopAimDialDrag);
+aimDial.addEventListener("pointercancel", stopAimDialDrag);
+fireButton.addEventListener("pointerdown", (event) => {
+  event.stopPropagation();
   if (activeCruiseProjectile()) {
-    event.preventDefault();
-    return;
+    startCruiseBoost(event);
+  } else {
+    startShotCharge(event);
   }
-  fire();
+});
+fireButton.addEventListener("pointerup", (event) => {
+  event.stopPropagation();
+  if (activeCruiseProjectile()) {
+    stopCruiseBoost();
+  } else {
+    releaseShotCharge(event);
+  }
+});
+fireButton.addEventListener("pointerleave", () => {
+  if (activeCruiseProjectile()) stopCruiseBoost();
+});
+fireButton.addEventListener("pointercancel", () => {
+  stopCruiseBoost();
+  cancelShotCharge();
+});
+fireButton.addEventListener("click", (event) => {
+  event.preventDefault();
 });
 resetButton.addEventListener("click", resetGame);
 window.addEventListener("beforeunload", closeEvents);
 
 window.addEventListener("keydown", (event) => {
+  if (!loginOverlay.classList.contains("hidden")) return;
   const cruise = activeCruiseProjectile();
   if (cruise) {
     if (event.key === "a" || event.key === "A" || event.key === "ArrowLeft") {
       event.preventDefault();
-      steer(-1);
+      startMoveHoldDirection(-1);
     }
     if (event.key === "d" || event.key === "D" || event.key === "ArrowRight") {
       event.preventDefault();
-      steer(1);
+      startMoveHoldDirection(1);
     }
     if (event.code === "Space") {
       event.preventDefault();
-      boostCruise();
+      if (!isSpaceCruiseBoosting) {
+        isSpaceCruiseBoosting = true;
+        startCruiseBoost(event);
+      }
     }
     return;
   }
   if (angleInput.disabled) return;
-  if (event.key === "a" || event.key === "A") moveOrSteer(-1);
-  if (event.key === "d" || event.key === "D") moveOrSteer(1);
-  if (event.key === "ArrowLeft") angleInput.value = clamp(Number(angleInput.value) + 1, 5, 85);
-  if (event.key === "ArrowRight") angleInput.value = clamp(Number(angleInput.value) - 1, 5, 85);
-  if (event.key === "ArrowUp") powerInput.value = clamp(Number(powerInput.value) + 2, 20, 100);
-  if (event.key === "ArrowDown") powerInput.value = clamp(Number(powerInput.value) - 2, 20, 100);
+  if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") {
+    event.preventDefault();
+    startMoveHoldDirection(-1);
+    return;
+  }
+  if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") {
+    event.preventDefault();
+    startMoveHoldDirection(1);
+    return;
+  }
+  const activePlayer = latest?.players?.[latest.current] || {};
+  const minAim = aimMinForPlayer(activePlayer);
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    angleInput.value = clamp(Number(angleInput.value) + 1, minAim, AIM_MAX);
+    sendControls();
+    return;
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    angleInput.value = clamp(Number(angleInput.value) - 1, minAim, AIM_MAX);
+    sendControls();
+    return;
+  }
   if (event.code === "Space") {
     event.preventDefault();
-    fire();
+    if (!isSpaceCharging) {
+      isSpaceCharging = true;
+      startShotCharge(event);
+    }
+    return;
   }
   sendControls();
+});
+
+window.addEventListener("keyup", (event) => {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "a" || event.key === "A" || event.key === "d" || event.key === "D") {
+    event.preventDefault();
+    stopMoveHold();
+    return;
+  }
+  if (event.code !== "Space") return;
+  event.preventDefault();
+  if (isSpaceCruiseBoosting) {
+    isSpaceCruiseBoosting = false;
+    stopCruiseBoost();
+    return;
+  }
+  if (activeCruiseProjectile()) return;
+  isSpaceCharging = false;
+  releaseShotCharge(event);
 });
 
 nameInput.value = localStorage.getItem("skyBatteryName") || "";
 angleValue.textContent = angleInput.value;
 powerValue.textContent = powerInput.value;
+setPowerGauge(Number(powerInput.value), previousPowerValue);
 refreshLoginOptions();
 setInterval(refreshLoginOptions, 2000);
 render();
