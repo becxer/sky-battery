@@ -176,26 +176,26 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 
 | Tank | Role |
 | --- | --- |
-| Normal Tank | Standard single-shot tank with balanced damage and blast size. |
-| Shield Tank | Deals 80% normal damage, blocks one incoming attack, then recharges after two turns. |
-| Triple Missile | Fires three shells at slight angle offsets for wider coverage. |
-| Red Core | Fires a small red round with very high direct damage and a tight blast. |
-| Seeker | Fires a small green missile that locks onto nearby targets while falling. |
-| Howitzer | Projectile grows with flight time, increasing visible size, damage, and blast radius. |
-| Laser | Shoots an instant beam that carves terrain along its path. |
-| Dragon Tank | Black close-range tank that breathes a short line of fire for 30-36 area damage. |
-| 3-Cushion Chain | Bounces off terrain up to three times, slightly steering each bounce toward the nearest tank. |
-| Poop Tank | Adds poop stacks that reduce movement and increase later poop damage. |
-| Nuke Tank | Marks a target point first; hitting the same point again triggers a huge blast. |
-| Cruise Missile | Launches a slow missile; Fire or Space applies lift during flight. |
-| Cheese Tank | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow visibly larger, and become easier to hit. |
-| Zombie Tank | Throws a stone that releases a zombie near impact; zombies can be shot down, and retire after dealing about one normal shell of total damage. |
-| Healing Tank | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
-| Heart Tank | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
-| Pujik Tank | Launches a butt-shaped projectile that can stop midair and drop poop. |
-| Boing Tank | Hitting terrain jumps the tank to that point; hitting a tank explodes like a normal shell. |
-| Ball Tank | Fires white balls that split, then merge into larger falling balls. |
-| Super Tank | Very rare rainbow homing missile tank with five guided shots. |
+| Normal Tank / 노말 탱크 | Standard single-shot tank with balanced damage and blast size. |
+| Shield Tank / 쉴드 탱크 | Deals 80% normal damage, blocks one incoming attack, then recharges after two turns. |
+| Triple Missile / 멀티미사일 탱크 | Fires three shells at slight angle offsets for wider coverage. |
+| Red Core / 빨콩탱크 | Fires a small red round with very high direct damage and a tight blast. |
+| Seeker / 유도탄 탱크 | Fires a small green missile that locks onto nearby targets while falling. |
+| Howitzer / 자주포 탱크 | Projectile grows with flight time, increasing visible size, damage, and blast radius. |
+| Laser / 레이저 탱크 | Shoots an instant beam that carves terrain along its path. |
+| Dragon Tank / 드래곤 탱크 | Black close-range tank that breathes a short line of fire for 30-36 area damage. |
+| 3-Cushion Chain / 3쿠션 체인 탱크 | Bounces off terrain up to three times, slightly steering each bounce toward the nearest tank. |
+| Poop Tank / 똥탱크 | Adds poop stacks that reduce movement and increase later poop damage. |
+| Nuke Tank / 핵폭탄 탱크 | Marks a target point first; hitting the same point again triggers a huge blast. |
+| Cruise Missile / 순항미사일 탱크 | Launches a slow missile; Fire or Space applies lift during flight. |
+| Cheese Tank / 치즈 탱크 | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow visibly larger, and become easier to hit. |
+| Zombie Tank / 좀비 탱크 | Throws a stone that releases a zombie near impact; zombies can be shot down, and retire after dealing about one normal shell of total damage. |
+| Healing Tank / 힐링탱크 | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
+| Heart Tank / 하트탱크 | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
+| Pujik Tank / 뿌직탱크 | Launches a butt-shaped projectile that can stop midair and drop poop. |
+| Boing Tank / 또잉탱크 | Hitting terrain jumps the tank to that point; hitting a tank explodes like a normal shell. |
+| Ball Tank / 볼탱크 | Fires white balls that split, then merge into larger falling balls. |
+| Super Tank / 슈퍼탱크 | Very rare rainbow homing missile tank with five guided shots. |
 
 ## Troubleshooting
 
