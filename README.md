@@ -177,6 +177,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Tank | Role |
 | --- | --- |
 | Normal Tank | Standard single-shot tank with balanced damage and blast size. |
+| Shield Tank | Deals 80% normal damage, blocks one incoming attack, then recharges after three turns. |
 | Triple Missile | Fires three shells at slight angle offsets for wider coverage. |
 | Red Core | Fires a small red round with very high direct damage and a tight blast. |
 | Seeker | Fires a small green missile that locks onto nearby targets while falling. |

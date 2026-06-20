@@ -108,8 +108,10 @@ HEART_MAX_SCALE = 1.85
 HEART_HUGE_CHANCE = 0.08
 HEART_HUGE_MIN_SCALE = 2.8
 HEART_HUGE_MAX_SCALE = 3.6
+SHIELD_RECHARGE_TURNS = 3
 TANK_TYPES = {
     "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
+    "shield": {"label": "Shield", "damage": 0.8, "radius": 1.0, "shots": [0], "barrels": [0]},
     "multi": {"label": "Triple", "damage": 0.75, "radius": 0.82, "shots": [-3, 0, 3], "barrels": [-6, 0, 6]},
     "red": {"label": "Red Core", "damage": 1.0, "baseDamage": 80, "radius": 0.45, "shots": [0], "barrels": [0]},
     "missile": {"label": "Seeker", "damage": 0.2, "radius": 0.92, "shots": [0], "barrels": [0], "homing": True},
@@ -147,6 +149,7 @@ TANK_TYPES = {
 TANK_TYPE_KEYS = list(TANK_TYPES.keys())
 TANK_TYPE_WEIGHTS = {
     "normal": 24,
+    "shield": 18,
     "multi": 24,
     "red": 24,
     "missile": 24,
@@ -544,6 +547,60 @@ def tank_hit_radius(player):
     return TANK_CONTACT_RADIUS * tank_size_multiplier(player)
 
 
+def player_has_shield(player):
+    return player.get("tankType") == "shield"
+
+
+def reset_shield_for_tank_type(player):
+    has_shield = player_has_shield(player)
+    player["shieldActive"] = has_shield
+    player["shieldCooldown"] = 0
+
+
+def set_player_tank_type(player, tank_type):
+    player["tankType"] = tank_type
+    reset_shield_for_tank_type(player)
+
+
+def shield_blocks_attack(player):
+    if not player_has_shield(player) or not player.get("shieldActive"):
+        return False
+    player["shieldActive"] = False
+    # The current shot resolves by advancing the turn immediately, so start one
+    # higher to show three full turns of recharge time to players.
+    player["shieldCooldown"] = SHIELD_RECHARGE_TURNS + 1
+    state["effects"].append({
+        "type": "shield-break",
+        "x": player["x"],
+        "y": player["y"] - 16 * tank_size_multiplier(player),
+        "life": 24,
+        "maxLife": 24,
+    })
+    sounds.append("shield")
+    return True
+
+
+def tick_shields():
+    for player in state["players"]:
+        if not player_has_shield(player) or player["health"] <= 0:
+            continue
+        if player.get("shieldActive"):
+            player["shieldCooldown"] = 0
+            continue
+        cooldown = max(0, int(player.get("shieldCooldown", 0)) - 1)
+        player["shieldCooldown"] = cooldown
+        if cooldown <= 0:
+            player["shieldActive"] = True
+            state["effects"].append({
+                "type": "shield-ready",
+                "x": player["x"],
+                "y": player["y"] - 16 * tank_size_multiplier(player),
+                "life": 26,
+                "maxLife": 26,
+            })
+            sounds.append("shield")
+
+
 def aim_min_for_player(player):
     return LASER_AIM_MIN if player.get("tankType") == "laser" else AIM_MIN
 
@@ -797,9 +854,10 @@ def validate_spawns():
 
 def make_player(index, x):
     colors = ["#5fb8ff", "#ff9167", "#73d38a", "#f5d76e", "#c58cff", "#65e0d5"]
-    return {
+    tank_type = random_tank_type()
+    player = {
         "name": f"Player {index + 1}",
-        "tankType": random_tank_type(),
+        "tankType": tank_type,
         "x": x,
         "y": spawn_y(x),
         "vx": 0,
@@ -816,9 +874,13 @@ def make_player(index, x):
         "poopDamage": 0,
         "poopStacks": 0,
         "cheeseStacks": 0,
+        "shieldActive": False,
+        "shieldCooldown": 0,
         "respawnTimer": 0,
         "isDummy": False,
     }
+    reset_shield_for_tank_type(player)
+    return player
 
 
 def make_dummy_target(index, x):
@@ -831,6 +893,8 @@ def make_dummy_target(index, x):
         "poopDamage": 0,
         "poopStacks": 0,
         "cheeseStacks": 0,
+        "shieldActive": False,
+        "shieldCooldown": 0,
         "respawnTimer": 0,
         "isDummy": True,
     })
@@ -923,7 +987,7 @@ def recreate_world():
 
 def apply_solo_tank_choice(seat, tank_type):
     if player_count() == 1 and seat == 0 and tank_type in TANK_TYPES:
-        state["players"][0]["tankType"] = tank_type
+        set_player_tank_type(state["players"][0], tank_type)
 
 
 def assign_seat(client_id, name, tank_type=None):
@@ -957,6 +1021,7 @@ def start_turn_for(index):
 
 
 def next_turn():
+    tick_shields()
     alive = [i for i, p in enumerate(state["players"]) if p["health"] > 0]
     if player_count() == 1:
         state["current"] = 0
@@ -1003,14 +1068,15 @@ def fire_laser(player, owner):
         sounds.append("zombiedie")
     elif hit["type"] == "player":
         target = state["players"][hit["player"]]
-        target["health"] -= 42
-        target["vx"] += math.cos(angle) * 14
-        target["vy"] += math.sin(angle) * 8 - 5
-        target["av"] += target["dir"] * 0.16
-        sounds.append("damage")
-        if target["health"] <= 0:
-            target["health"] = 0
-            sounds.append("retire")
+        if not shield_blocks_attack(target):
+            target["health"] -= 42
+            target["vx"] += math.cos(angle) * 14
+            target["vy"] += math.sin(angle) * 8 - 5
+            target["av"] += target["dir"] * 0.16
+            sounds.append("damage")
+            if target["health"] <= 0:
+                target["health"] = 0
+                sounds.append("retire")
     resolve_shot_end()
 
 
@@ -1070,6 +1136,8 @@ def fire_dragon(player, owner):
         extra_hit_radius = max(0, tank_hit_radius(target) - TANK_CONTACT_RADIUS)
         effective_distance = max(0, distance - extra_hit_radius)
         if effective_distance > DRAGON_FLAME_WIDTH:
+            continue
+        if shield_blocks_attack(target):
             continue
         target["health"] -= damage
         push = 1 - effective_distance / max(1, DRAGON_FLAME_WIDTH)
@@ -1358,6 +1426,8 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     damage_platforms(x, y, radius * EXPLOSION_PLATFORM_SCALE)
     hit = False
     damaged = False
+    blocked = False
+    blocked_indexes = []
     retired = False
     healed = False
     for index, player in enumerate(state["players"]):
@@ -1388,6 +1458,11 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
                     "maxLife": 28,
                 })
                 hit = True
+                continue
+            if shield_blocks_attack(player):
+                hit = True
+                blocked = True
+                blocked_indexes.append(index)
                 continue
             if base_damage is not None:
                 damage = round(base_damage * damage_multiplier)
@@ -1441,6 +1516,7 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     if advance_turn:
         set_projectiles([])
         resolve_shot_end()
+    return {"hit": hit, "damaged": damaged, "blocked": blocked, "blockedIndexes": blocked_indexes}
 
 
 def nuke_mark_for_owner(owner):
@@ -1566,6 +1642,7 @@ def respawn_dummy_target(player):
     player["poopDamage"] = 0
     player["poopStacks"] = 0
     player["cheeseStacks"] = 0
+    reset_shield_for_tank_type(player)
     player["respawnTimer"] = 0
     player["angleBody"] = ground_angle_at(player["x"], player["y"])
     if state["players"] and not state["players"][0].get("isDummy"):
@@ -1627,7 +1704,7 @@ def spawn_zombie(owner, target, x, y):
 
 def handle_zombie_impact(projectile, x, y, speed):
     damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(projectile)
-    explode(
+    result = explode(
         x,
         y,
         speed,
@@ -1638,9 +1715,12 @@ def handle_zombie_impact(projectile, x, y, speed):
         projectile.get("owner"),
         advance_turn=False,
     )
+    blocked_indexes = set(result.get("blockedIndexes", [])) if result else set()
     spawned = False
     for index, player in enumerate(state["players"]):
         if player["health"] <= 0:
+            continue
+        if index in blocked_indexes:
             continue
         if math.hypot(player["x"] - x, player["y"] - y) <= ZOMBIE_SPAWN_RADIUS:
             spawn_zombie(projectile.get("owner"), index, x, y)
@@ -1676,6 +1756,10 @@ def update_zombies(dt):
         zombie["attackCooldown"] = max(0, zombie.get("attackCooldown", 0) - dt)
         close = abs(target["x"] - zombie["x"]) <= ZOMBIE_ATTACK_RANGE and abs(target["y"] - zombie["y"]) <= 42
         if close and zombie["attackCooldown"] <= 0:
+            if shield_blocks_attack(target):
+                zombie["attackCooldown"] = ZOMBIE_ATTACK_INTERVAL
+                next_zombies.append(zombie)
+                continue
             damage_done = min(ZOMBIE_ATTACK_DAMAGE, max(0, target["health"]))
             target["health"] -= damage_done
             target["vx"] += direction * 2.2
@@ -2054,7 +2138,7 @@ def snapshot():
         "platformMask": state["platformMask"],
         "platforms": state["platforms"],
         "players": [
-            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "cheeseStacks", "respawnTimer", "isDummy")}
+            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "cheeseStacks", "shieldActive", "shieldCooldown", "respawnTimer", "isDummy")}
             for p in state["players"]
         ],
         "playerCount": state["playerCount"],

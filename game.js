@@ -43,6 +43,7 @@ const CHEESE_MAX_SCALE = 1.72;
 const TANK_TYPE_META = {
   dragon: { label: "D", name: "드래곤 탱크", desc: "블랙 근거리 탱크. 짧은 직선 화염으로 30-36 광역 피해를 줍니다.", color: "#050608", shell: "#ff5a1f", glow: "#ffb13b" },
   normal: { label: "N", name: "노말 탱크", desc: "기본 포탄을 안정적으로 쏘는 표준 탱크.", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
+  shield: { label: "S", name: "쉴드 탱크", desc: "공격력은 낮지만 1회 공격을 막고 3턴 뒤 쉴드가 돌아옵니다.", color: "#6de7ff", shell: "#2f7dff", glow: "#d8ffff" },
   multi: { label: "III", name: "멀티미사일", desc: "세 발을 동시에 흩뿌려 넓게 압박합니다.", color: "#74d7ff", shell: "#1f252c", glow: "#ffcd6f" },
   red: { label: "R", name: "빨콩탱크", desc: "작은 폭발 대신 매우 강한 빨간 핵심탄을 쏩니다.", color: "#ff4848", shell: "#ff3030", glow: "#ff8674" },
   missile: { label: "M", name: "유도탄 탱크", desc: "내려오며 가까운 목표를 강하게 추적하는 약한 유도탄.", color: "#39ff14", shell: "#39ff14", glow: "#baffee" },
@@ -251,6 +252,9 @@ function playSound(name) {
   } else if (name === "cheese") {
     tone(720, 0.06, "triangle", 0.045, 980);
     setTimeout(() => tone(920, 0.05, "sine", 0.035, 1220), 55);
+  } else if (name === "shield") {
+    tone(520, 0.08, "sine", 0.055, 980);
+    setTimeout(() => tone(1180, 0.12, "triangle", 0.045, 640), 70);
   } else if (name === "zombie") {
     tone(128, 0.2, "sawtooth", 0.07, 82);
     setTimeout(() => tone(220, 0.12, "triangle", 0.045, 130), 120);
@@ -1220,6 +1224,54 @@ function drawCheeseStacks() {
   });
 }
 
+function drawShieldStates() {
+  if (!latest) return;
+  latest.players.forEach((player) => {
+    if (tankType(player) !== "shield" || player.health <= 0) return;
+    const size = tankSizeMultiplier(player);
+    const radius = 26 * size;
+    const centerY = player.y - 8 * size;
+    ctx.save();
+    if (player.shieldActive) {
+      ctx.globalCompositeOperation = "lighter";
+      const glow = ctx.createRadialGradient(player.x, centerY, radius * 0.35, player.x, centerY, radius * 1.28);
+      glow.addColorStop(0, "rgba(216, 255, 255, 0.05)");
+      glow.addColorStop(0.58, "rgba(109, 231, 255, 0.18)");
+      glow.addColorStop(1, "rgba(47, 125, 255, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(player.x, centerY, radius * 1.28, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(216, 255, 255, 0.82)";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.arc(player.x, centerY, radius, Math.PI * 0.08, Math.PI * 1.92);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(47, 125, 255, 0.58)";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(player.x, centerY, radius + 3, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.stroke();
+    } else if ((player.shieldCooldown || 0) > 0) {
+      const label = `${player.shieldCooldown}`;
+      const y = Math.max(12, player.y - 66 * size);
+      ctx.font = "900 12px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(8, 18, 30, 0.82)";
+      ctx.beginPath();
+      ctx.arc(player.x, y, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(109, 231, 255, 0.8)";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      ctx.fillStyle = "#d8ffff";
+      ctx.fillText(label, player.x, y + 0.4);
+    }
+    ctx.restore();
+  });
+}
+
 function drawMoveBars() {
   if (!latest) return;
   latest.players.forEach((player, index) => {
@@ -1358,6 +1410,24 @@ function drawTankTypeTrim(player) {
     ctx.fillStyle = "#ffcf5a";
     ctx.beginPath();
     ctx.arc(player.dir === 1 ? 9 : -9, -23, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === "shield") {
+    const armor = ctx.createLinearGradient(-33, -30, 34, 12);
+    armor.addColorStop(0, "#d8ffff");
+    armor.addColorStop(0.38, "#6de7ff");
+    armor.addColorStop(1, "#2f7dff");
+    ctx.fillStyle = armor;
+    roundRect(-32, -16, 64, 30, 9);
+    ctx.fill();
+    roundRect(-18, -31, 36, 22, 10);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(216, 255, 255, 0.9)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, -21, 18, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+    roundRect(-24, -24, 48, 4, 2);
     ctx.fill();
   } else if (type === "multi") {
     ctx.fillStyle = "rgba(116, 215, 255, 0.95)";
@@ -1607,6 +1677,8 @@ function drawTankBarrels(player) {
   const type = tankType(player);
   if (type === "dragon") {
     drawBarrel(player, undefined, 0, { length: 34, thickness: 12, tip: 8, accent: "#ff5a1f" });
+  } else if (type === "shield") {
+    drawBarrel(player, undefined, 0, { length: 30, thickness: 8, tip: 6, accent: "#2f7dff" });
   } else if (type === "multi") {
     [-8, 0, 8].forEach((offset) => drawBarrel(player, undefined, offset, { length: 27, thickness: 4, tip: 3, accent: "#74d7ff" }));
   } else if (type === "red") {
@@ -2367,6 +2439,27 @@ function drawEffects() {
       ctx.textBaseline = "middle";
       ctx.fillText(`+${effect.stack || 1}`, effect.x, effect.y - 2);
       ctx.restore();
+    } else if (effect.type === "shield-break" || effect.type === "shield-ready") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const ready = effect.type === "shield-ready";
+      const radius = ready ? 18 + (1 - fade) * 24 : 38 - (1 - fade) * 16;
+      ctx.strokeStyle = ready
+        ? `rgba(216, 255, 255, ${0.86 * fade})`
+        : `rgba(47, 125, 255, ${0.86 * fade})`;
+      ctx.lineWidth = ready ? 3 : 5;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      if (!ready) {
+        ctx.setLineDash([6, 5]);
+        ctx.strokeStyle = `rgba(216, 255, 255, ${0.66 * fade})`;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, radius + 9, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
     } else if (effect.type === "heart-shift") {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
@@ -2520,6 +2613,7 @@ function render() {
     drawHealthBars();
     drawZombies();
     latest.players.forEach(drawTank);
+    drawShieldStates();
     drawMoveBars();
     latest.players.forEach(drawNameTag);
     drawCheeseStacks();
