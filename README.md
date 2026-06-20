@@ -1,8 +1,12 @@
 # Sky Battery
 
+Sky Battery is a local Wi-Fi browser artillery game developed by Eugene Back and Seohyun Back. One PC runs the Python server, and phones or browsers on the same network join as clients.
+
+## Gameplay Snapshot
+
 ![Sky Battery gameplay screen](docs/sky-battery-gameplay.png)
 
-Sky Battery is a local Wi-Fi browser artillery game developed by Eugene Back and Seohyun Back. One PC runs the Python server, and phones or browsers on the same network join as clients.
+Sky Battery uses a wide 20:9 battlefield with destructible terrain, floating platforms, wind, turn-based movement, and touch-friendly fire controls.
 
 ## Requirements
 
@@ -17,7 +21,7 @@ No npm install or build step is required.
 From the project directory:
 
 ```powershell
-cd C:\Users\Tower\Desktop\projects\test
+cd C:\Users\Tower\Desktop\projects\sky-battery
 python server.py
 ```
 
@@ -167,6 +171,29 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 - Hold Fire to charge power, then release to shoot.
 - Keyboard: left/right arrows or `A`/`D` move, up/down arrows adjust angle, Space charges and fires.
 - During cruise missile flight, Space or Fire applies lift.
+
+## Tank Types
+
+| Tank | Role |
+| --- | --- |
+| Normal Tank | Standard single-shot tank with balanced damage and blast size. |
+| Triple Missile | Fires three shells at slight angle offsets for wider coverage. |
+| Red Core | Fires a small red round with very high direct damage and a tight blast. |
+| Seeker | Fires a small green missile that locks onto nearby targets while falling. |
+| Howitzer | Projectile grows with flight time, increasing visible size, damage, and blast radius. |
+| Laser | Shoots an instant beam that carves terrain along its path. |
+| 3-Cushion Chain | Bounces off terrain up to three times before exploding. |
+| Poop Tank | Adds poop stacks that reduce movement and increase later poop damage. |
+| Nuke Tank | Marks a target point first; hitting the same point again triggers a huge blast. |
+| Cruise Missile | Launches a slow missile; Fire or Space applies lift during flight. |
+| Cheese Tank | Cheese projectile splits repeatedly into multiple pieces. |
+| Zombie Tank | Throws a stone that releases a zombie near impact; zombies chase and tap-damage tanks. |
+| Healing Tank | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
+| Heart Tank | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
+| Pujik Tank | Launches a butt-shaped projectile that can stop midair and drop poop. |
+| Boing Tank | Hitting terrain jumps the tank to that point; hitting a tank explodes like a normal shell. |
+| Ball Tank | Fires white balls that split, then merge into larger falling balls. |
+| Super Tank | Very rare rainbow homing missile tank with five guided shots. |
 
 ## Troubleshooting
 
