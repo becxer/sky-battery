@@ -72,8 +72,6 @@ CRUISE_MAX_AGE = 10.0
 CRUISE_SPEED_SCALE = 0.60
 CRUISE_MIN_SPEED = 210
 CRUISE_DRAG = 0.990
-CRUISE_TURN_RATE = math.radians(115)
-CRUISE_STEER_TIME = 0.22
 CRUISE_BOOST_TIME = 0.18
 CRUISE_GRAVITY_SCALE = 0.24
 CRUISE_LIFT_ACCEL = 720
@@ -96,7 +94,7 @@ ZOMBIE_HIT_RADIUS = 17
 ZOMBIE_SPAWN_RADIUS = 62
 ZOMBIE_MAX_COUNT = 8
 HEAL_SELF_RATIO = 0.2
-HEART_RESIZE_COOLDOWN = 0.2
+HEART_RESIZE_COOLDOWN = 0.0
 HEART_MIN_SCALE = 0.65
 HEART_MAX_SCALE = 1.85
 HEART_HUGE_CHANCE = 0.08
@@ -1000,8 +998,6 @@ def fire_for(client_id):
             "homing": bool(spec.get("homing")),
             "cruise": bool(spec.get("cruise")),
             "maxAge": spec.get("maxAge", CRUISE_MAX_AGE if spec.get("cruise") else None),
-            "steer": 0,
-            "steerTime": 0,
             "boostTime": 0,
             "bouncy": bool(spec.get("bouncy")),
             "bounces": 0,
@@ -1054,17 +1050,7 @@ def move_for(client_id, direction):
 
 
 def steer_for(client_id, direction):
-    client = clients.get(client_id)
-    if state["phase"] != "playing" or not client:
-        return
-    seat = client["seat"]
-    if seat not in range(player_count()):
-        return
-    direction = -1 if float(direction) < 0 else 1
-    for projectile in state.get("projectiles", []):
-        if projectile.get("cruise") and projectile.get("owner") == seat:
-            projectile["steer"] = direction
-            projectile["steerTime"] = CRUISE_STEER_TIME
+    return
 
 
 def boost_for(client_id):
@@ -1080,8 +1066,6 @@ def boost_for(client_id):
         if projectile.get("cruise"):
             projectile["boostTime"] = CRUISE_BOOST_TIME
         elif projectile.get("heart"):
-            if projectile.get("heartCooldown", 0) > 0:
-                continue
             projectile["heartScale"] = random_heart_scale()
             projectile["heartCooldown"] = HEART_RESIZE_COOLDOWN
             state["effects"].append({
@@ -1584,9 +1568,6 @@ def steer_homing_projectile(p, dt):
 def update_cruise_projectile(p, dt):
     speed = max(CRUISE_MIN_SPEED, math.hypot(p["vx"], p["vy"]) * CRUISE_DRAG)
     angle = math.atan2(p["vy"], p["vx"])
-    if p.get("steerTime", 0) > 0:
-        angle += p.get("steer", 0) * CRUISE_TURN_RATE * dt
-        p["steerTime"] = max(0, p.get("steerTime", 0) - dt)
     p["vx"] = math.cos(angle) * speed
     p["vy"] = math.sin(angle) * speed + PROJECTILE_GRAVITY * CRUISE_GRAVITY_SCALE * dt
     if p.get("boostTime", 0) > 0:

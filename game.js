@@ -48,11 +48,11 @@ const TANK_TYPE_META = {
   chain: { label: "C", name: "3쿠션 체인", desc: "지형에 튕기며 최대 세 번 방향을 바꿉니다.", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
-  cruise: { label: "V", name: "순항미사일", desc: "비행 중 좌우 조향과 Fire/Space 상승이 가능한 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
+  cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
   cheese: { label: "CH", name: "치즈 탱크", desc: "치즈 조각이 계속 쪼개져 여러 조각으로 떨어집니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
   zombie: { label: "Z", name: "좀비 탱크", desc: "맞은 근처에 좀비를 풀어 목표를 따라다니게 합니다.", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
   healing: { label: "H", name: "힐링탱크", desc: "자신에게 맞추면 잃은 체력의 일부를 반짝 회복합니다.", color: "#8fffe8", shell: "#9dfff1", glow: "#fff7a8" },
-  heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space로 크기를 바꾸며 가끔 왕하트가 나옵니다.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
+  heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space를 누를 때마다 크기가 바뀌고 가끔 왕하트가 나옵니다.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
   butt: { label: "B", name: "뿌직탱크", desc: "비행 중 Fire/Space를 누르면 그 자리에서 똥을 떨어뜨립니다.", color: "#f0b28f", shell: "#f2b090", glow: "#ffe0c9" },
   poopdrop: { label: "P", name: "똥", desc: "떨어지는 똥 포탄.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   boing: { label: "BO", name: "또잉탱크", desc: "지형에 맞으면 그 지점으로 또잉 점프 이동합니다.", color: "#b68cff", shell: "#b68cff", glow: "#f0dcff" },
@@ -494,22 +494,18 @@ function updateHud() {
   updateTankDescription();
 
   const activeSpecial = activeSpecialProjectile();
-  const activeCruise = activeSpecial?.cruise ? activeSpecial : activeCruiseProjectile();
   const projectileActive = currentProjectiles().length > 0;
   const myTurn = seat === latest.current && !projectileActive && latest.winner === null;
-  const canSteer = Boolean(activeCruise) && latest.winner === null;
   const canSpecial = Boolean(activeSpecial) && latest.winner === null;
   const moveRemaining = latest.players[seat]?.moveRemaining ?? 0;
-  moveValue.textContent = canSteer
-    ? `${Math.max(0, Math.ceil((activeCruise.maxAge || 10) - (activeCruise.age || 0)))}s`
-    : Math.round(moveRemaining);
-  moveLeftButton.disabled = !(myTurn || canSteer);
-  moveRightButton.disabled = !(myTurn || canSteer);
+  moveValue.textContent = projectileActive ? "0" : Math.round(moveRemaining);
+  moveLeftButton.disabled = !myTurn;
+  moveRightButton.disabled = !myTurn;
   fireButton.disabled = !(myTurn || canSpecial);
   if (!isChargingShot) fireButton.textContent = canSpecial ? specialProjectileButtonText(activeSpecial) : "Fire";
   angleInput.disabled = !myTurn;
   powerInput.disabled = !myTurn;
-  if (!canSteer) {
+  if (!activeCruiseProjectile()) {
     isSpaceCruiseBoosting = false;
     stopCruiseBoost();
   }
@@ -632,10 +628,6 @@ function move(direction) {
   postJson("/move", { id: clientId, direction }).catch(() => {});
 }
 
-function steer(direction) {
-  postJson("/steer", { id: clientId, direction }).catch(() => {});
-}
-
 function activateProjectileSpecial() {
   postJson("/boost", { id: clientId }, 1800).catch(() => {});
 }
@@ -665,12 +657,8 @@ function stopCruiseBoost() {
   cruiseBoostTimer = null;
 }
 
-function moveOrSteer(direction) {
-  if (activeCruiseProjectile()) {
-    steer(direction);
-  } else {
-    move(direction);
-  }
+function moveWhileHolding(direction) {
+  move(direction);
 }
 
 function stopMoveHold() {
@@ -687,7 +675,7 @@ function startMoveHoldDirection(direction) {
   ensureAudio();
   stopMoveHold();
   moveHoldDirection = direction;
-  moveOrSteer(direction);
+  moveWhileHolding(direction);
   moveHoldTimer = window.setInterval(() => {
     if (!moveHoldDirection) return;
     const activeButton = moveHoldDirection < 0 ? moveLeftButton : moveRightButton;
@@ -695,7 +683,7 @@ function startMoveHoldDirection(direction) {
       stopMoveHold();
       return;
     }
-    moveOrSteer(moveHoldDirection);
+    moveWhileHolding(moveHoldDirection);
   }, 80);
 }
 
@@ -2476,13 +2464,9 @@ window.addEventListener("keydown", (event) => {
   if (!loginOverlay.classList.contains("hidden")) return;
   const special = activeSpecialProjectile();
   if (special) {
-    if (event.key === "a" || event.key === "A" || event.key === "ArrowLeft") {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "a" || event.key === "A" || event.key === "d" || event.key === "D") {
       event.preventDefault();
-      if (special.cruise) startMoveHoldDirection(-1);
-    }
-    if (event.key === "d" || event.key === "D" || event.key === "ArrowRight") {
-      event.preventDefault();
-      if (special.cruise) startMoveHoldDirection(1);
+      return;
     }
     if (event.code === "Space") {
       event.preventDefault();
