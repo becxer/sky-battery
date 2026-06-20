@@ -182,6 +182,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Seeker | Fires a small green missile that locks onto nearby targets while falling. |
 | Howitzer | Projectile grows with flight time, increasing visible size, damage, and blast radius. |
 | Laser | Shoots an instant beam that carves terrain along its path. |
+| Dragon Tank | Black close-range tank that breathes a short line of fire for 30-36 area damage. |
 | 3-Cushion Chain | Bounces off terrain up to three times before exploding. |
 | Poop Tank | Adds poop stacks that reduce movement and increase later poop damage. |
 | Nuke Tank | Marks a target point first; hitting the same point again triggers a huge blast. |

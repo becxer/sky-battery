@@ -39,6 +39,7 @@ const POWER_CHARGE_MS = 3600;
 const ARTILLERY_GROW_START = 0.15;
 const ARTILLERY_GROW_DURATION = 2.65;
 const TANK_TYPE_META = {
+  dragon: { label: "D", name: "드래곤 탱크", desc: "블랙 근거리 탱크. 짧은 직선 화염으로 30-36 광역 피해를 줍니다.", color: "#050608", shell: "#ff5a1f", glow: "#ffb13b" },
   normal: { label: "N", name: "노말 탱크", desc: "기본 포탄을 안정적으로 쏘는 표준 탱크.", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
   multi: { label: "III", name: "멀티미사일", desc: "세 발을 동시에 흩뿌려 넓게 압박합니다.", color: "#74d7ff", shell: "#1f252c", glow: "#ffcd6f" },
   red: { label: "R", name: "빨콩탱크", desc: "작은 폭발 대신 매우 강한 빨간 핵심탄을 쏩니다.", color: "#ff4848", shell: "#ff3030", glow: "#ff8674" },
@@ -225,6 +226,10 @@ function playSound(name) {
   } else if (name === "laser") {
     tone(1320, 0.12, "sawtooth", 0.055, 1880);
     setTimeout(() => tone(720, 0.1, "triangle", 0.04, 1280), 70);
+  } else if (name === "dragon") {
+    tone(92, 0.18, "sawtooth", 0.08, 48);
+    setTimeout(() => tone(180, 0.16, "triangle", 0.06, 86), 55);
+    setTimeout(() => tone(360, 0.12, "sawtooth", 0.045, 140), 120);
   } else if (name === "boing") {
     tone(340, 0.1, "sine", 0.06, 620);
     setTimeout(() => tone(250, 0.08, "triangle", 0.04, 480), 90);
@@ -1264,7 +1269,34 @@ function drawTankTypeTrim(player) {
   ctx.rotate(player.angleBody);
   ctx.scale(TANK_SCALE, TANK_SCALE);
 
-  if (type === "multi") {
+  if (type === "dragon") {
+    const body = ctx.createLinearGradient(-33, -32, 34, 10);
+    body.addColorStop(0, "#4b5058");
+    body.addColorStop(0.2, "#101317");
+    body.addColorStop(1, "#020304");
+    ctx.fillStyle = body;
+    roundRect(-32, -16, 64, 30, 8);
+    ctx.fill();
+    roundRect(-19, -32, 38, 23, 9);
+    ctx.fill();
+    ctx.fillStyle = "#ff5a1f";
+    ctx.beginPath();
+    ctx.moveTo(15, -31);
+    ctx.lineTo(30, -44);
+    ctx.lineTo(27, -24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-15, -31);
+    ctx.lineTo(-30, -44);
+    ctx.lineTo(-27, -24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#ffcf5a";
+    ctx.beginPath();
+    ctx.arc(player.dir === 1 ? 9 : -9, -23, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === "multi") {
     ctx.fillStyle = "rgba(116, 215, 255, 0.95)";
     [-13, 0, 13].forEach((x) => {
       ctx.beginPath();
@@ -1510,7 +1542,9 @@ function barrelAngle(player) {
 
 function drawTankBarrels(player) {
   const type = tankType(player);
-  if (type === "multi") {
+  if (type === "dragon") {
+    drawBarrel(player, undefined, 0, { length: 34, thickness: 12, tip: 8, accent: "#ff5a1f" });
+  } else if (type === "multi") {
     [-8, 0, 8].forEach((offset) => drawBarrel(player, undefined, offset, { length: 27, thickness: 4, tip: 3, accent: "#74d7ff" }));
   } else if (type === "red") {
     drawBarrel(player, undefined, 0, { length: 25, thickness: 9, tip: 6, accent: "#ff3030" });
@@ -2178,6 +2212,29 @@ function drawEffects() {
       ctx.stroke();
       ctx.strokeStyle = `rgba(93, 246, 255, ${0.55 * fade})`;
       ctx.lineWidth = 15;
+      ctx.beginPath();
+      ctx.moveTo(effect.x1, effect.y1);
+      ctx.lineTo(effect.x2, effect.y2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.type === "dragon-flame") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      const width = effect.width || 34;
+      const shimmer = Math.sin((effect.life || 0) * 1.7) * 3;
+      const flame = ctx.createLinearGradient(effect.x1, effect.y1, effect.x2, effect.y2);
+      flame.addColorStop(0, `rgba(255, 245, 150, ${0.92 * fade})`);
+      flame.addColorStop(0.36, `rgba(255, 92, 31, ${0.86 * fade})`);
+      flame.addColorStop(1, `rgba(95, 18, 4, ${0.05 * fade})`);
+      ctx.strokeStyle = flame;
+      ctx.lineWidth = width + shimmer;
+      ctx.beginPath();
+      ctx.moveTo(effect.x1, effect.y1);
+      ctx.lineTo(effect.x2, effect.y2);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 207, 90, ${0.92 * fade})`;
+      ctx.lineWidth = Math.max(8, width * 0.34);
       ctx.beginPath();
       ctx.moveTo(effect.x1, effect.y1);
       ctx.lineTo(effect.x2, effect.y2);

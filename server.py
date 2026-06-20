@@ -34,6 +34,10 @@ AIM_MAX = 85
 LASER_CARVE_WIDTH = 8
 LASER_CARVE_LENGTH = 55
 LASER_CARVE_STEP = 7
+DRAGON_FLAME_RANGE = 155
+DRAGON_FLAME_WIDTH = 34
+DRAGON_DAMAGE_MIN = 30
+DRAGON_DAMAGE_MAX = 36
 PLAYER_GRAVITY = 1800
 PROJECTILE_GRAVITY = 1600
 PROJECTILE_POWER_SCALE = 12.5
@@ -108,6 +112,7 @@ TANK_TYPES = {
     "missile": {"label": "Seeker", "damage": 0.2, "radius": 0.92, "shots": [0], "barrels": [0], "homing": True},
     "artillery": {"label": "Howitzer", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "artillery": True},
     "laser": {"label": "Laser", "damage": 1.0, "radius": 0.35, "shots": [0], "barrels": [0], "laser": True},
+    "dragon": {"label": "Dragon", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "dragon": True},
     "chain": {"label": "Chain", "damage": 0.78, "radius": 0.86, "shots": [0], "barrels": [0], "bouncy": True, "maxBounces": 3},
     "poop": {"label": "Poop", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
     "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
@@ -144,6 +149,7 @@ TANK_TYPE_WEIGHTS = {
     "missile": 24,
     "artillery": 24,
     "laser": 18,
+    "dragon": 18,
     "chain": 18,
     "poop": 18,
     "nuke": 10,
@@ -960,6 +966,90 @@ def fire_laser(player, owner):
     resolve_shot_end()
 
 
+def point_segment_distance(px, py, x1, y1, x2, y2):
+    dx = x2 - x1
+    dy = y2 - y1
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 0.001:
+        return math.hypot(px - x1, py - y1), 0
+    t = clamp(((px - x1) * dx + (py - y1) * dy) / length_sq, 0, 1)
+    cx = x1 + dx * t
+    cy = y1 + dy * t
+    return math.hypot(px - cx, py - cy), t
+
+
+def dragon_flame_end(start_x, start_y, angle):
+    step = 5
+    distance = 8
+    while distance <= DRAGON_FLAME_RANGE:
+        x = start_x + math.cos(angle) * distance
+        y = start_y + math.sin(angle) * distance
+        if x < 0 or x >= W or y < -80 or y > H + 80:
+            return x, y
+        if solid_at(x, y):
+            return x, y
+        distance += step
+    return (
+        start_x + math.cos(angle) * DRAGON_FLAME_RANGE,
+        start_y + math.sin(angle) * DRAGON_FLAME_RANGE,
+    )
+
+
+def fire_dragon(player, owner):
+    angle = barrel_angle_for(player)
+    start_x = player["x"] + math.cos(angle) * TANK_FIRE_DISTANCE
+    start_y = player["y"] - TANK_MUZZLE_Y + math.sin(angle) * TANK_FIRE_DISTANCE
+    end_x, end_y = dragon_flame_end(start_x, start_y, angle)
+    damage = random.randint(DRAGON_DAMAGE_MIN, DRAGON_DAMAGE_MAX)
+    state["effects"].append({
+        "type": "dragon-flame",
+        "x1": start_x,
+        "y1": start_y,
+        "x2": end_x,
+        "y2": end_y,
+        "width": DRAGON_FLAME_WIDTH,
+        "life": 14,
+        "maxLife": 14,
+    })
+    sounds.append("dragon")
+
+    damaged = False
+    retired = False
+    for index, target in enumerate(state["players"]):
+        if index == owner or target["health"] <= 0:
+            continue
+        distance, t = point_segment_distance(target["x"], target["y"] - 8, start_x, start_y, end_x, end_y)
+        if distance > DRAGON_FLAME_WIDTH:
+            continue
+        target["health"] -= damage
+        push = 1 - distance / max(1, DRAGON_FLAME_WIDTH)
+        target["vx"] += math.cos(angle) * (5 + push * 7)
+        target["vy"] += math.sin(angle) * (3 + push * 5) - push * 4
+        target["av"] += target["dir"] * 0.1
+        damaged = True
+        if target["health"] <= 0:
+            target["health"] = 0
+            retired = True
+
+    removed_zombie = False
+    survivors = []
+    for zombie in state.get("zombies", []):
+        distance, _ = point_segment_distance(zombie["x"], zombie["y"] - 12, start_x, start_y, end_x, end_y)
+        if distance <= DRAGON_FLAME_WIDTH + ZOMBIE_HIT_RADIUS:
+            removed_zombie = True
+            continue
+        survivors.append(zombie)
+    state["zombies"] = survivors[:ZOMBIE_MAX_COUNT]
+
+    if damaged:
+        sounds.append("damage")
+    if retired:
+        sounds.append("retire")
+    if removed_zombie:
+        sounds.append("zombiedie")
+    resolve_shot_end()
+
+
 def fire_for(client_id):
     client = clients.get(client_id)
     if state["phase"] != "playing" or not client or client["seat"] != state["current"] or active_projectiles() or state["winner"] is not None:
@@ -968,6 +1058,9 @@ def fire_for(client_id):
     spec = tank_spec(player)
     if spec.get("laser"):
         fire_laser(player, state["current"])
+        return
+    if spec.get("dragon"):
+        fire_dragon(player, state["current"])
         return
     base_angle = barrel_angle_for(player)
     power = player["power"] * PROJECTILE_POWER_SCALE
