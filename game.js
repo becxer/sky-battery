@@ -46,7 +46,7 @@ const TANK_TYPE_META = {
   missile: { label: "M", name: "유도탄 탱크", desc: "내려오며 가까운 목표를 강하게 추적하는 약한 유도탄.", color: "#39ff14", shell: "#39ff14", glow: "#baffee" },
   artillery: { label: "A", name: "자주포 탱크", desc: "오래 날수록 탄이 커지고 폭발도 강해집니다.", color: "#f5d76e", shell: "#4b4f58", glow: "#ffe07a" },
   laser: { label: "L", name: "레이저 탱크", desc: "직선 레이저로 맞은 경로의 지형을 길게 깎습니다.", color: "#5df6ff", shell: "#5df6ff", glow: "#d8ffff" },
-  chain: { label: "C", name: "3쿠션 체인", desc: "지형에 튕기며 최대 세 번 방향을 바꿉니다.", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
+  chain: { label: "C", name: "3쿠션 체인", desc: "지형에 튕길 때 가까운 탱크 쪽으로 살짝 방향을 보정합니다.", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },

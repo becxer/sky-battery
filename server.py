@@ -42,6 +42,7 @@ PLAYER_GRAVITY = 1800
 PROJECTILE_GRAVITY = 1600
 PROJECTILE_POWER_SCALE = 12.5
 WIND_FORCE = 42
+CHAIN_BOUNCE_AIM_BLEND = 0.35
 GROUND_MIN_Y = 225
 GROUND_CONTROL_CLEARANCE = 150
 GROUND_MAX_Y = H - GROUND_CONTROL_CLEARANCE
@@ -695,11 +696,42 @@ def bounce_projectile(projectile, hit_x, hit_y):
     dot = projectile["vx"] * nx + projectile["vy"] * ny
     projectile["vx"] = (projectile["vx"] - 2 * dot * nx) * 0.76
     projectile["vy"] = (projectile["vy"] - 2 * dot * ny) * 0.76
+    if projectile.get("tankType") == "chain":
+        steer_bounce_toward_nearest_tank(projectile, hit_x, hit_y, nx, ny)
     projectile["x"] = hit_x + nx * 8
     projectile["y"] = hit_y + ny * 8
     projectile["bounces"] = projectile.get("bounces", 0) + 1
     projectile["age"] = max(projectile.get("age", 0), 0.22)
     sounds.append("boing")
+
+
+def steer_bounce_toward_nearest_tank(projectile, hit_x, hit_y, nx, ny):
+    owner = projectile.get("owner")
+    candidates = []
+    for index, player in enumerate(state["players"]):
+        if index == owner or player["health"] <= 0:
+            continue
+        dx = player["x"] - hit_x
+        dy = (player["y"] - 8) - hit_y
+        distance = math.hypot(dx, dy)
+        if distance > 0.001:
+            candidates.append((distance, dx / distance, dy / distance))
+    if not candidates:
+        return
+
+    _, target_x, target_y = min(candidates, key=lambda item: item[0])
+    current_speed = max(0.001, math.hypot(projectile["vx"], projectile["vy"]))
+    speed = max(180, current_speed)
+    current_x = projectile["vx"] / current_speed
+    current_y = projectile["vy"] / current_speed
+    aim_x = current_x * (1 - CHAIN_BOUNCE_AIM_BLEND) + target_x * CHAIN_BOUNCE_AIM_BLEND
+    aim_y = current_y * (1 - CHAIN_BOUNCE_AIM_BLEND) + target_y * CHAIN_BOUNCE_AIM_BLEND
+    if aim_x * nx + aim_y * ny < 0.12:
+        aim_x += nx * 0.34
+        aim_y += ny * 0.34
+    aim_length = max(0.001, math.hypot(aim_x, aim_y))
+    projectile["vx"] = aim_x / aim_length * speed
+    projectile["vy"] = aim_y / aim_length * speed
 
 
 def random_positions(count=None):
