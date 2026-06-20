@@ -23,6 +23,7 @@ const aimRangeLine = document.getElementById("aimRangeLine");
 const angleIndicator = document.getElementById("angleIndicator");
 const previousPowerBar = document.getElementById("previousPowerBar");
 const chargePowerBar = document.getElementById("chargePowerBar");
+const tankDescription = document.getElementById("tankDescription");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -38,19 +39,25 @@ const POWER_CHARGE_MS = 3600;
 const ARTILLERY_GROW_START = 0.15;
 const ARTILLERY_GROW_DURATION = 2.65;
 const TANK_TYPE_META = {
-  normal: { label: "N", name: "노말 탱크", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
-  multi: { label: "III", name: "멀티미사일", color: "#74d7ff", shell: "#1f252c", glow: "#ffcd6f" },
-  red: { label: "R", name: "빨콩탱크", color: "#ff4848", shell: "#ff3030", glow: "#ff8674" },
-  missile: { label: "M", name: "유도탄 탱크", color: "#39ff14", shell: "#39ff14", glow: "#baffee" },
-  artillery: { label: "A", name: "자주포 탱크", color: "#f5d76e", shell: "#4b4f58", glow: "#ffe07a" },
-  laser: { label: "L", name: "레이저 탱크", color: "#5df6ff", shell: "#5df6ff", glow: "#d8ffff" },
-  chain: { label: "C", name: "3쿠션 체인", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
-  poop: { label: "P", name: "똥탱크", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
-  nuke: { label: "X", name: "핵폭탄 탱크", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
-  cruise: { label: "V", name: "순항미사일", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
-  cheese: { label: "CH", name: "치즈 탱크", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
-  zombie: { label: "Z", name: "좀비 탱크", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
-  super: { label: "S", name: "슈퍼탱크", color: "#ffe23f", shell: "#39ff14", glow: "#fff1a8" },
+  normal: { label: "N", name: "노말 탱크", desc: "기본 포탄을 안정적으로 쏘는 표준 탱크.", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
+  multi: { label: "III", name: "멀티미사일", desc: "세 발을 동시에 흩뿌려 넓게 압박합니다.", color: "#74d7ff", shell: "#1f252c", glow: "#ffcd6f" },
+  red: { label: "R", name: "빨콩탱크", desc: "작은 폭발 대신 매우 강한 빨간 핵심탄을 쏩니다.", color: "#ff4848", shell: "#ff3030", glow: "#ff8674" },
+  missile: { label: "M", name: "유도탄 탱크", desc: "내려오며 가까운 목표를 강하게 추적하는 약한 유도탄.", color: "#39ff14", shell: "#39ff14", glow: "#baffee" },
+  artillery: { label: "A", name: "자주포 탱크", desc: "오래 날수록 탄이 커지고 폭발도 강해집니다.", color: "#f5d76e", shell: "#4b4f58", glow: "#ffe07a" },
+  laser: { label: "L", name: "레이저 탱크", desc: "직선 레이저로 맞은 경로의 지형을 길게 깎습니다.", color: "#5df6ff", shell: "#5df6ff", glow: "#d8ffff" },
+  chain: { label: "C", name: "3쿠션 체인", desc: "지형에 튕기며 최대 세 번 방향을 바꿉니다.", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
+  poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
+  nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
+  cruise: { label: "V", name: "순항미사일", desc: "비행 중 좌우 조향과 Fire/Space 상승이 가능한 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
+  cheese: { label: "CH", name: "치즈 탱크", desc: "치즈 조각이 계속 쪼개져 여러 조각으로 떨어집니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
+  zombie: { label: "Z", name: "좀비 탱크", desc: "맞은 근처에 좀비를 풀어 목표를 따라다니게 합니다.", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
+  healing: { label: "H", name: "힐링탱크", desc: "자신에게 맞추면 잃은 체력의 일부를 반짝 회복합니다.", color: "#8fffe8", shell: "#9dfff1", glow: "#fff7a8" },
+  heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space로 하트 크기와 위력을 랜덤 변경.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
+  butt: { label: "B", name: "뿌직탱크", desc: "비행 중 Fire/Space를 누르면 그 자리에서 똥을 떨어뜨립니다.", color: "#f0b28f", shell: "#f2b090", glow: "#ffe0c9" },
+  poopdrop: { label: "P", name: "똥", desc: "떨어지는 똥 포탄.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
+  boing: { label: "BO", name: "또잉탱크", desc: "지형에 맞으면 그 지점으로 또잉 점프 이동합니다.", color: "#b68cff", shell: "#b68cff", glow: "#f0dcff" },
+  superball: { label: "SB", name: "슈퍼볼탱크", desc: "흰 공 5발이 20발까지 갈라진 뒤 합쳐져 커집니다.", color: "#ffffff", shell: "#ffffff", glow: "#eaf7ff" },
+  super: { label: "S", name: "슈퍼탱크", desc: "드물게 등장하는 다섯 발짜리 무지개 유도 미사일.", color: "#ffe23f", shell: "#39ff14", glow: "#fff1a8" },
 };
 const SUPER_MISSILE_COLORS = ["#ff3030", "#ff9f1a", "#ffe23f", "#39ff14", "#4aa3ff"];
 const sprites = {
@@ -245,6 +252,20 @@ function playSound(name) {
   } else if (name === "zombiedie") {
     tone(520, 0.08, "triangle", 0.05, 760);
     setTimeout(() => tone(240, 0.1, "sine", 0.035, 180), 80);
+  } else if (name === "heal") {
+    tone(640, 0.08, "sine", 0.045, 920);
+    setTimeout(() => tone(1040, 0.08, "triangle", 0.04, 1440), 80);
+    setTimeout(() => tone(1520, 0.1, "sine", 0.035, 1880), 160);
+  } else if (name === "heart") {
+    tone(760, 0.06, "sine", 0.04, 1080);
+    setTimeout(() => tone(560, 0.06, "triangle", 0.035, 880), 65);
+  } else if (name === "toing") {
+    tone(320, 0.18, "sine", 0.075, 780);
+    setTimeout(() => tone(520, 0.22, "triangle", 0.055, 1180), 120);
+    setTimeout(() => tone(760, 0.26, "sine", 0.04, 360), 300);
+  } else if (name === "superball") {
+    tone(520, 0.07, "sine", 0.045, 820);
+    setTimeout(() => tone(720, 0.08, "triangle", 0.04, 1040), 70);
   } else if (name === "retire") {
     tone(760, 0.12, "sine", 0.075, 1140);
     setTimeout(() => tone(520, 0.14, "triangle", 0.065, 860), 95);
@@ -359,6 +380,22 @@ function activeCruiseProjectile() {
   return currentProjectiles().find((projectile) => projectile.cruise && projectile.owner === seat);
 }
 
+function activeSpecialProjectile() {
+  return currentProjectiles().find((projectile) => {
+    if (projectile.owner !== seat) return false;
+    if (projectile.cruise || projectile.heart) return true;
+    return projectile.butt && !projectile.buttDropped;
+  });
+}
+
+function specialProjectileButtonText(projectile) {
+  if (!projectile) return "Fire";
+  if (projectile.cruise) return "Lift";
+  if (projectile.heart) return "Resize";
+  if (projectile.butt && !projectile.buttDropped) return "Drop";
+  return "Fire";
+}
+
 function canFireShot() {
   return latest?.phase === "playing"
     && seat === latest.current
@@ -428,9 +465,21 @@ function updateAimDial(player = latest?.players?.[latest?.current]) {
   }
 }
 
+function updateTankDescription() {
+  if (!tankDescription) return;
+  const player = latest?.players?.[seat];
+  if (!player || latest?.phase !== "playing") {
+    tankDescription.textContent = "Three phones can join on the same Wi-Fi. Movement is limited each turn.";
+    return;
+  }
+  const meta = tankMeta(player);
+  tankDescription.textContent = `${meta.name}: ${meta.desc || "선택된 탱크입니다."}`;
+}
+
 function updateHud() {
   if (!latest) return;
   if (latest.phase !== "playing") {
+    updateTankDescription();
     moveValue.textContent = "0";
     moveLeftButton.disabled = true;
     moveRightButton.disabled = true;
@@ -441,19 +490,22 @@ function updateHud() {
     return;
   }
   syncControlsFromState();
+  updateTankDescription();
 
-  const activeCruise = activeCruiseProjectile();
+  const activeSpecial = activeSpecialProjectile();
+  const activeCruise = activeSpecial?.cruise ? activeSpecial : activeCruiseProjectile();
   const projectileActive = currentProjectiles().length > 0;
   const myTurn = seat === latest.current && !projectileActive && latest.winner === null;
   const canSteer = Boolean(activeCruise) && latest.winner === null;
+  const canSpecial = Boolean(activeSpecial) && latest.winner === null;
   const moveRemaining = latest.players[seat]?.moveRemaining ?? 0;
   moveValue.textContent = canSteer
     ? `${Math.max(0, Math.ceil((activeCruise.maxAge || 10) - (activeCruise.age || 0)))}s`
     : Math.round(moveRemaining);
   moveLeftButton.disabled = !(myTurn || canSteer);
   moveRightButton.disabled = !(myTurn || canSteer);
-  fireButton.disabled = !(myTurn || canSteer);
-  if (!isChargingShot) fireButton.textContent = canSteer ? "Lift" : "Fire";
+  fireButton.disabled = !(myTurn || canSpecial);
+  if (!isChargingShot) fireButton.textContent = canSpecial ? specialProjectileButtonText(activeSpecial) : "Fire";
   angleInput.disabled = !myTurn;
   powerInput.disabled = !myTurn;
   if (!canSteer) {
@@ -501,8 +553,8 @@ function sendControls() {
 
 function fire() {
   ensureAudio();
-  if (activeCruiseProjectile()) {
-    boostCruise();
+  if (activeSpecialProjectile()) {
+    activateProjectileSpecial();
     return;
   }
   postJson("/fire", { id: clientId }).catch(() => {});
@@ -583,8 +635,12 @@ function steer(direction) {
   postJson("/steer", { id: clientId, direction }).catch(() => {});
 }
 
-function boostCruise() {
+function activateProjectileSpecial() {
   postJson("/boost", { id: clientId }, 1800).catch(() => {});
+}
+
+function boostCruise() {
+  activateProjectileSpecial();
 }
 
 function startCruiseBoost(event) {
@@ -1275,6 +1331,23 @@ function drawTankTypeTrim(player) {
     roundRect(-34, -16, 68, 9, 5);
     ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (type === "superball") {
+    ctx.globalCompositeOperation = "lighter";
+    [-24, -12, 0, 12, 24].forEach((x, index) => {
+      const shine = ctx.createRadialGradient(x - 2, -27, 1, x, -24, 8);
+      shine.addColorStop(0, "#ffffff");
+      shine.addColorStop(0.55, "#eaf7ff");
+      shine.addColorStop(1, "#a9c7f2");
+      ctx.fillStyle = shine;
+      ctx.beginPath();
+      ctx.arc(x, -24 - (index % 2) * 3, 6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = "#d7e8ff";
+    roundRect(-34, -16, 68, 9, 5);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   } else if (type === "laser") {
     ctx.strokeStyle = "#5df6ff";
     ctx.lineWidth = 4;
@@ -1359,6 +1432,64 @@ function drawTankTypeTrim(player) {
       ctx.arc(x, -25, 1.4, 0, Math.PI * 2);
       ctx.fill();
     });
+  } else if (type === "healing") {
+    ctx.globalCompositeOperation = "lighter";
+    const glow = ctx.createRadialGradient(0, -23, 3, 0, -23, 25);
+    glow.addColorStop(0, "rgba(255, 255, 210, 0.95)");
+    glow.addColorStop(0.42, "rgba(143, 255, 232, 0.65)");
+    glow.addColorStop(1, "rgba(143, 255, 232, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, -23, 25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff7a8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, -39);
+    ctx.lineTo(0, -10);
+    ctx.moveTo(-15, -24);
+    ctx.lineTo(15, -24);
+    ctx.stroke();
+  } else if (type === "heart") {
+    ctx.fillStyle = "#ff85c8";
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.bezierCurveTo(-22, -32, -38, -8, 0, 15);
+    ctx.bezierCurveTo(38, -8, 22, -32, 0, -13);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 214, 239, 0.85)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else if (type === "butt") {
+    const skin = ctx.createRadialGradient(-6, -26, 3, 0, -21, 25);
+    skin.addColorStop(0, "#ffe0c9");
+    skin.addColorStop(0.55, "#f0b28f");
+    skin.addColorStop(1, "#9d5d45");
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.arc(-9, -22, 13, 0, Math.PI * 2);
+    ctx.arc(9, -22, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(94, 43, 34, 0.55)";
+    ctx.lineWidth = 2.3;
+    ctx.beginPath();
+    ctx.moveTo(0, -34);
+    ctx.quadraticCurveTo(0, -22, 0, -10);
+    ctx.stroke();
+  } else if (type === "boing") {
+    ctx.strokeStyle = "#f0dcff";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i += 1) {
+      const x = -18 + i * 9;
+      ctx.arc(x, -23, 5, Math.PI * 0.2, Math.PI * 1.8);
+    }
+    ctx.stroke();
+    ctx.fillStyle = "#b68cff";
+    ctx.beginPath();
+    ctx.arc(-23, -23, 5, 0, Math.PI * 2);
+    ctx.arc(23, -23, 5, 0, Math.PI * 2);
+    ctx.fill();
   } else if (type === "artillery") {
     ctx.globalAlpha = 0.74;
     ctx.fillStyle = typeColor;
@@ -1402,6 +1533,10 @@ function drawTankBarrels(player) {
     [-12, -6, 0, 6, 12].forEach((offset, index) => {
       drawBarrel(player, undefined, offset, { length: 34, thickness: 3.6, tip: 4, accent: SUPER_MISSILE_COLORS[index], fins: true });
     });
+  } else if (type === "superball") {
+    [-12, -6, 0, 6, 12].forEach((offset) => {
+      drawBarrel(player, undefined, offset, { length: 31, thickness: 4.8, tip: 5, accent: "#ffffff" });
+    });
   } else if (type === "laser") {
     drawBarrel(player, undefined, 0, { length: 42, thickness: 4, tip: 6, accent: "#5df6ff" });
   } else if (type === "chain") {
@@ -1414,6 +1549,14 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 31, thickness: 8, tip: 6, accent: "#ffd84d" });
   } else if (type === "zombie") {
     drawBarrel(player, undefined, 0, { length: 32, thickness: 9, tip: 6, accent: "#5d6158" });
+  } else if (type === "healing") {
+    drawBarrel(player, undefined, 0, { length: 32, thickness: 7, tip: 6, accent: "#8fffe8" });
+  } else if (type === "heart") {
+    drawBarrel(player, undefined, 0, { length: 30, thickness: 8, tip: 6, accent: "#ff85c8" });
+  } else if (type === "butt") {
+    drawBarrel(player, undefined, 0, { length: 27, thickness: 9, tip: 6, accent: "#f0b28f" });
+  } else if (type === "boing") {
+    drawBarrel(player, undefined, 0, { length: 30, thickness: 7, tip: 7, accent: "#b68cff" });
   } else if (type === "artillery") {
     drawBarrel(player, undefined, 0, { length: 40, thickness: 8, tip: 5, accent: artilleryColor(player) });
   } else {
@@ -1500,6 +1643,12 @@ function projectileTrailColor(p) {
   if (p.tankType === "nuke") return "rgba(255, 48, 48, 0.9)";
   if (p.tankType === "cheese") return "rgba(255, 216, 77, 0.92)";
   if (p.tankType === "zombie") return "rgba(111, 227, 111, 0.84)";
+  if (p.tankType === "healing") return "rgba(143, 255, 232, 0.9)";
+  if (p.tankType === "heart") return "rgba(255, 94, 189, 0.88)";
+  if (p.tankType === "butt") return "rgba(240, 178, 143, 0.84)";
+  if (p.tankType === "poopdrop") return "rgba(132, 82, 38, 0.84)";
+  if (p.tankType === "boing") return "rgba(182, 140, 255, 0.9)";
+  if (p.tankType === "superball") return "rgba(255, 255, 255, 0.9)";
   return p.locked ? "rgba(57, 255, 20, 0.92)" : "rgba(255, 215, 120, 0.78)";
 }
 
@@ -1672,6 +1821,121 @@ function drawZombieStoneProjectile() {
   return true;
 }
 
+function drawHealingProjectile() {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const glow = ctx.createRadialGradient(0, 0, 1, 0, 0, 12);
+  glow.addColorStop(0, "rgba(255, 255, 210, 0.95)");
+  glow.addColorStop(0.42, "rgba(143, 255, 232, 0.7)");
+  glow.addColorStop(1, "rgba(143, 255, 232, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 247, 168, 0.95)";
+  ctx.lineWidth = 2.1;
+  ctx.beginPath();
+  ctx.moveTo(0, -8);
+  ctx.lineTo(0, 8);
+  ctx.moveTo(-8, 0);
+  ctx.lineTo(8, 0);
+  ctx.stroke();
+  ctx.restore();
+  return true;
+}
+
+function drawHeartProjectile(p) {
+  const scale = clamp(p.heartScale || 1, 0.55, 2.0);
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ff5ebd";
+  ctx.beginPath();
+  ctx.moveTo(0, 7);
+  ctx.bezierCurveTo(-18, -4, -11, -18, 0, -9);
+  ctx.bezierCurveTo(11, -18, 18, -4, 0, 7);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 214, 239, 0.9)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
+  ctx.beginPath();
+  ctx.arc(-4, -7, 2.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  return true;
+}
+
+function drawButtProjectile() {
+  const skin = ctx.createRadialGradient(-2, -3, 1, 0, 0, 9);
+  skin.addColorStop(0, "#ffe0c9");
+  skin.addColorStop(0.55, "#f0b28f");
+  skin.addColorStop(1, "#9d5d45");
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.arc(-4.4, 0, 6.2, 0, Math.PI * 2);
+  ctx.arc(4.4, 0, 6.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(94, 43, 34, 0.55)";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(0, -5.8);
+  ctx.quadraticCurveTo(0, 0, 0, 5.8);
+  ctx.stroke();
+  return true;
+}
+
+function drawBoingProjectile() {
+  ctx.strokeStyle = "#f0dcff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i += 1) {
+    ctx.arc(-6 + i * 4, 0, 3.6, Math.PI * 0.25, Math.PI * 1.75);
+  }
+  ctx.stroke();
+  const orb = ctx.createRadialGradient(-2, -3, 1, 0, 0, 8);
+  orb.addColorStop(0, "#ffffff");
+  orb.addColorStop(0.45, "#b68cff");
+  orb.addColorStop(1, "#5a2f9b");
+  ctx.fillStyle = orb;
+  ctx.beginPath();
+  ctx.arc(8, 0, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  return true;
+}
+
+function superballProjectileScale(p) {
+  const mass = clamp(p.superballMass || 1, 1, 8);
+  return 0.78 + Math.sqrt(mass) * 0.34;
+}
+
+function drawSuperballProjectile(p) {
+  const scale = superballProjectileScale(p);
+  ctx.save();
+  ctx.scale(scale, scale);
+  const ball = ctx.createRadialGradient(-2.4, -2.8, 0.8, 0, 0, 7.2);
+  ball.addColorStop(0, "#ffffff");
+  ball.addColorStop(0.42, "#f6fbff");
+  ball.addColorStop(0.78, "#cdddf2");
+  ball.addColorStop(1, "#8aa5cf");
+  ctx.fillStyle = ball;
+  ctx.beginPath();
+  ctx.arc(0, 0, 7.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  if ((p.superballLevel || 0) >= 2 || (p.superballMass || 1) > 1) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = `rgba(234, 247, 255, ${0.38 + Math.min(0.32, (p.superballMass || 1) * 0.04)})`;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 10.2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  return true;
+}
+
 function drawArtilleryProjectile(p) {
   const tint = artilleryProjectileColor(p);
   const size = artilleryProjectileSize(p);
@@ -1771,7 +2035,7 @@ function drawProjectileAsset(p, meta, flightAngle) {
   if (type === "chain") {
     return drawChainProjectile();
   }
-  if (type === "poop") {
+  if (type === "poop" || type === "poopdrop") {
     return drawPoopProjectile();
   }
   if (type === "nuke") {
@@ -1782,6 +2046,21 @@ function drawProjectileAsset(p, meta, flightAngle) {
   }
   if (type === "zombie") {
     return drawZombieStoneProjectile();
+  }
+  if (type === "healing") {
+    return drawHealingProjectile();
+  }
+  if (type === "heart") {
+    return drawHeartProjectile(p);
+  }
+  if (type === "butt") {
+    return drawButtProjectile();
+  }
+  if (type === "boing") {
+    return drawBoingProjectile();
+  }
+  if (type === "superball") {
+    return drawSuperballProjectile(p);
   }
   if (type === "cruise") {
     return drawCruiseProjectile(p);
@@ -1804,14 +2083,17 @@ function drawFallbackProjectile(meta) {
 function drawOneProjectile(p) {
   const meta = TANK_TYPE_META[p.tankType || "normal"] || TANK_TYPE_META.normal;
   const flightAngle = Math.atan2(p.vy || 0, p.vx || 1);
-  const visualScale = p.tankType === "cruise" ? cruiseProjectileScale(p) : 1;
+  const visualScale = p.tankType === "cruise"
+    ? cruiseProjectileScale(p)
+    : p.tankType === "heart" ? clamp(p.heartScale || 1, 0.55, 2.0)
+      : p.tankType === "superball" ? superballProjectileScale(p) : 1;
   const tailX = p.x - Math.cos(flightAngle) * 14 * visualScale;
   const tailY = p.y - Math.sin(flightAngle) * 14 * visualScale;
   const trail = ctx.createLinearGradient(tailX, tailY, p.x, p.y);
   trail.addColorStop(0, "rgba(255, 215, 120, 0)");
   trail.addColorStop(1, projectileTrailColor(p));
   ctx.strokeStyle = trail;
-  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise") ? Math.max(1, 2 * visualScale) : 3;
+  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise" || p.tankType === "heart" || p.tankType === "superball") ? Math.max(1, 2 * visualScale) : 3;
   ctx.beginPath();
   ctx.moveTo(tailX, tailY);
   ctx.lineTo(p.x, p.y);
@@ -1933,6 +2215,72 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    } else if (effect.type === "heal") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const pulse = 16 + (1 - fade) * 34;
+      const glow = ctx.createRadialGradient(effect.x, effect.y, 2, effect.x, effect.y, pulse);
+      glow.addColorStop(0, `rgba(255, 255, 205, ${0.9 * fade})`);
+      glow.addColorStop(0.42, `rgba(143, 255, 232, ${0.48 * fade})`);
+      glow.addColorStop(1, "rgba(143, 255, 232, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(255, 247, 168, ${0.85 * fade})`;
+      ctx.lineWidth = 2.4;
+      for (let i = 0; i < 6; i += 1) {
+        const angle = i * Math.PI / 3 + (1 - fade) * 1.8;
+        const sx = effect.x + Math.cos(angle) * (10 + i % 2 * 7);
+        const sy = effect.y + Math.sin(angle) * (10 + i % 2 * 7);
+        ctx.beginPath();
+        ctx.moveTo(sx - 4, sy);
+        ctx.lineTo(sx + 4, sy);
+        ctx.moveTo(sx, sy - 4);
+        ctx.lineTo(sx, sy + 4);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (effect.type === "heart-shift") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const radius = (effect.scale || 1) * (12 + (1 - fade) * 20);
+      ctx.strokeStyle = `rgba(255, 94, 189, ${0.7 * fade})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.type === "butt-drop") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `rgba(139, 90, 43, ${0.32 * fade})`;
+      ctx.beginPath();
+      ctx.ellipse(effect.x, effect.y + (1 - fade) * 14, 26 * (1 - fade), 10 * fade, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else if (effect.type === "boing-jump") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const midX = (effect.x1 + effect.x2) / 2;
+      const midY = Math.min(effect.y1, effect.y2) - 80 * fade;
+      ctx.strokeStyle = `rgba(240, 220, 255, ${0.72 * fade})`;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      ctx.moveTo(effect.x1, effect.y1);
+      ctx.quadraticCurveTo(midX, midY, effect.x2, effect.y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = `rgba(182, 140, 255, ${0.7 * fade})`;
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 3; i += 1) {
+        const radius = 10 + i * 8 + (1 - fade) * 16;
+        ctx.beginPath();
+        ctx.arc(effect.x2, effect.y2, radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
     }
   });
@@ -2089,8 +2437,13 @@ aimDial.addEventListener("pointerup", stopAimDialDrag);
 aimDial.addEventListener("pointercancel", stopAimDialDrag);
 fireButton.addEventListener("pointerdown", (event) => {
   event.stopPropagation();
-  if (activeCruiseProjectile()) {
+  const special = activeSpecialProjectile();
+  if (special?.cruise) {
     startCruiseBoost(event);
+  } else if (special) {
+    event.preventDefault();
+    ensureAudio();
+    activateProjectileSpecial();
   } else {
     startShotCharge(event);
   }
@@ -2099,6 +2452,8 @@ fireButton.addEventListener("pointerup", (event) => {
   event.stopPropagation();
   if (activeCruiseProjectile()) {
     stopCruiseBoost();
+  } else if (activeSpecialProjectile()) {
+    event.preventDefault();
   } else {
     releaseShotCharge(event);
   }
@@ -2118,21 +2473,23 @@ window.addEventListener("beforeunload", closeEvents);
 
 window.addEventListener("keydown", (event) => {
   if (!loginOverlay.classList.contains("hidden")) return;
-  const cruise = activeCruiseProjectile();
-  if (cruise) {
+  const special = activeSpecialProjectile();
+  if (special) {
     if (event.key === "a" || event.key === "A" || event.key === "ArrowLeft") {
       event.preventDefault();
-      startMoveHoldDirection(-1);
+      if (special.cruise) startMoveHoldDirection(-1);
     }
     if (event.key === "d" || event.key === "D" || event.key === "ArrowRight") {
       event.preventDefault();
-      startMoveHoldDirection(1);
+      if (special.cruise) startMoveHoldDirection(1);
     }
     if (event.code === "Space") {
       event.preventDefault();
-      if (!isSpaceCruiseBoosting) {
+      if (special.cruise && !isSpaceCruiseBoosting) {
         isSpaceCruiseBoosting = true;
         startCruiseBoost(event);
+      } else if (!special.cruise) {
+        activateProjectileSpecial();
       }
     }
     return;
@@ -2186,7 +2543,7 @@ window.addEventListener("keyup", (event) => {
     stopCruiseBoost();
     return;
   }
-  if (activeCruiseProjectile()) return;
+  if (activeSpecialProjectile() || currentProjectiles().length) return;
   isSpaceCharging = false;
   releaseShotCharge(event);
 });

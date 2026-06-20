@@ -80,6 +80,13 @@ CHEESE_SPLIT_INTERVAL = 0.38
 CHEESE_SPLIT_ANGLE = math.radians(10)
 CHEESE_MAX_SPLIT_LEVEL = 3
 CHEESE_SPLIT_SPEED = 0.96
+SUPERBALL_SPLIT_INTERVAL = 0.34
+SUPERBALL_SPLIT_ANGLE = math.radians(8)
+SUPERBALL_SPLIT_SPEED = 0.98
+SUPERBALL_MAX_SPLIT_LEVEL = 2
+SUPERBALL_MERGE_RADIUS = 20
+SUPERBALL_MERGE_DELAY = 0.28
+SUPERBALL_MAX_MASS = 8
 ZOMBIE_SPEED = 62
 ZOMBIE_ATTACK_RANGE = 30
 ZOMBIE_ATTACK_INTERVAL = 0.42
@@ -87,6 +94,10 @@ ZOMBIE_ATTACK_DAMAGE = 2
 ZOMBIE_HIT_RADIUS = 17
 ZOMBIE_SPAWN_RADIUS = 62
 ZOMBIE_MAX_COUNT = 8
+HEAL_SELF_RATIO = 0.2
+HEART_RESIZE_COOLDOWN = 0.7
+HEART_MIN_SCALE = 0.65
+HEART_MAX_SCALE = 1.85
 TANK_TYPES = {
     "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
     "multi": {"label": "Triple", "damage": 0.75, "radius": 0.82, "shots": [-3, 0, 3], "barrels": [-6, 0, 6]},
@@ -100,6 +111,18 @@ TANK_TYPES = {
     "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
     "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True},
     "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
+    "healing": {"label": "Healing", "damage": 0.8, "radius": 0.9, "shots": [0], "barrels": [0], "effect": "heal"},
+    "heart": {"label": "Heart", "damage": 0.82, "radius": 0.82, "shots": [0], "barrels": [0], "heart": True},
+    "butt": {"label": "Pujik", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop", "butt": True},
+    "boing": {"label": "Boing", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "boing": True},
+    "superball": {
+        "label": "Superball",
+        "damage": 0.18,
+        "radius": 0.52,
+        "shots": [-9, -4.5, 0, 4.5, 9],
+        "barrels": [-14, -7, 0, 7, 14],
+        "superball": True,
+    },
     "super": {
         "label": "Super",
         "damage": 0.22,
@@ -124,6 +147,11 @@ TANK_TYPE_WEIGHTS = {
     "cruise": 14,
     "cheese": 18,
     "zombie": 16,
+    "healing": 18,
+    "heart": 18,
+    "butt": 18,
+    "boing": 18,
+    "superball": 6,
     "super": 1,
 }
 
@@ -516,6 +544,14 @@ def projectile_effect_multipliers(projectile):
     damage = projectile.get("damageMultiplier", 1.0)
     radius = projectile.get("radiusMultiplier", 1.0)
     base_damage = projectile.get("baseDamage")
+    if projectile.get("heart"):
+        heart_scale = clamp(projectile.get("heartScale", 1.0), HEART_MIN_SCALE, HEART_MAX_SCALE)
+        damage *= heart_scale
+        radius *= heart_scale
+    if projectile.get("superball"):
+        mass = clamp(projectile.get("superballMass", 1), 1, SUPERBALL_MAX_MASS)
+        damage *= mass ** 0.72
+        radius *= mass ** 0.48
     if projectile.get("tankType") == "artillery":
         age = projectile.get("age", 0)
         damage *= artillery_damage_multiplier_for_age(age)
@@ -965,11 +1001,23 @@ def fire_for(client_id):
             "cheeseMaxLevel": CHEESE_MAX_SPLIT_LEVEL if spec.get("cheese") else 0,
             "nextSplitAge": CHEESE_SPLIT_INTERVAL if spec.get("cheese") else None,
             "zombie": bool(spec.get("zombie")),
+            "heart": bool(spec.get("heart")),
+            "heartScale": random.uniform(HEART_MIN_SCALE, HEART_MAX_SCALE) if spec.get("heart") else 1.0,
+            "heartCooldown": 0,
+            "butt": bool(spec.get("butt")),
+            "buttDropped": False,
+            "boing": bool(spec.get("boing")),
+            "superball": bool(spec.get("superball")),
+            "superballLevel": 0,
+            "superballMaxLevel": SUPERBALL_MAX_SPLIT_LEVEL if spec.get("superball") else 0,
+            "superballMass": 1,
+            "nextSuperballSplitAge": SUPERBALL_SPLIT_INTERVAL if spec.get("superball") else None,
+            "superballMergeReadyAge": None,
             "effect": spec.get("effect"),
             "locked": False,
         })
     set_projectiles(projectiles)
-    sounds.append("cruise" if spec.get("cruise") else "fire")
+    sounds.append("superball" if spec.get("superball") else "cruise" if spec.get("cruise") else "fire")
 
 
 def move_for(client_id, direction):
@@ -1017,8 +1065,40 @@ def boost_for(client_id):
     if seat not in range(player_count()):
         return
     for projectile in state.get("projectiles", []):
-        if projectile.get("cruise") and projectile.get("owner") == seat:
+        if projectile.get("owner") != seat:
+            continue
+        if projectile.get("cruise"):
             projectile["boostTime"] = CRUISE_BOOST_TIME
+        elif projectile.get("heart"):
+            if projectile.get("heartCooldown", 0) > 0:
+                continue
+            projectile["heartScale"] = random.uniform(HEART_MIN_SCALE, HEART_MAX_SCALE)
+            projectile["heartCooldown"] = HEART_RESIZE_COOLDOWN
+            state["effects"].append({
+                "type": "heart-shift",
+                "x": projectile["x"],
+                "y": projectile["y"],
+                "scale": projectile["heartScale"],
+                "life": 16,
+                "maxLife": 16,
+            })
+            sounds.append("heart")
+        elif projectile.get("butt") and not projectile.get("buttDropped"):
+            projectile["buttDropped"] = True
+            projectile["tankType"] = "poopdrop"
+            projectile["vx"] = 0
+            projectile["vy"] = max(70, abs(projectile.get("vy", 0)) * 0.2)
+            projectile["av"] = 0.2
+            projectile["angle"] = math.pi / 2
+            projectile["effect"] = "poop"
+            state["effects"].append({
+                "type": "butt-drop",
+                "x": projectile["x"],
+                "y": projectile["y"],
+                "life": 18,
+                "maxLife": 18,
+            })
+            sounds.append("poop")
 
 
 def can_move_to(start_x, end_x, current_y=None):
@@ -1127,7 +1207,9 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     carve_crater(x, y, radius)
     damage_platforms(x, y, radius * EXPLOSION_PLATFORM_SCALE)
     hit = False
+    damaged = False
     retired = False
+    healed = False
     for index, player in enumerate(state["players"]):
         if player["health"] <= 0:
             continue
@@ -1137,6 +1219,24 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
         damage_radius = radius * EXPLOSION_DAMAGE_SCALE
         if distance < damage_radius:
             falloff = 1 - distance / damage_radius
+            if effect == "heal" and index == owner:
+                missing = max(0, 100 - player["health"])
+                heal_amount = round(missing * HEAL_SELF_RATIO)
+                if missing > 0 and heal_amount <= 0:
+                    heal_amount = 1
+                if heal_amount > 0:
+                    player["health"] = min(100, player["health"] + heal_amount)
+                    healed = True
+                state["effects"].append({
+                    "type": "heal",
+                    "x": player["x"],
+                    "y": player["y"] - 18,
+                    "amount": heal_amount,
+                    "life": 28,
+                    "maxLife": 28,
+                })
+                hit = True
+                continue
             if base_damage is not None:
                 damage = round(base_damage * damage_multiplier)
             else:
@@ -1154,6 +1254,7 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
             player["vy"] += (dy / max(distance, 1)) * falloff * 9 - falloff * 8
             player["av"] += falloff * player["dir"] * 0.12
             hit = True
+            damaged = True
 
     particle_scale = clamp(radius / EXPLOSION_MAX_RADIUS, 0.5, 3.0)
     particle_count = round(36 * clamp(particle_scale, 0.7, 2.4))
@@ -1174,7 +1275,9 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     sounds.append("explode")
     if effect == "poop":
         sounds.append("poop")
-    if hit:
+    if healed:
+        sounds.append("heal")
+    if damaged:
         sounds.append("damage")
     if retired:
         sounds.append("retire")
@@ -1241,6 +1344,36 @@ def handle_nuke_impact(projectile, x, y, impact_speed):
             owner,
             advance_turn=False,
         )
+
+
+def handle_boing_terrain_impact(projectile, x, y):
+    owner = projectile.get("owner")
+    if owner is None or owner < 0 or owner >= len(state["players"]):
+        return
+    player = state["players"][owner]
+    if player["health"] <= 0:
+        return
+    start_x = player["x"]
+    start_y = player["y"]
+    landing_x = clamp(x, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    landing_floor = supported_floor_y(landing_x, y)
+    player["x"] = landing_x
+    player["y"] = landing_floor - TANK_GROUND_OFFSET
+    player["vx"] = clamp(projectile.get("vx", 0) * 0.04, -90, 90)
+    player["vy"] = -170
+    player["av"] += player["dir"] * 0.22
+    player["angleBody"] = ground_angle_at(player["x"], player["y"])
+    player["moveRemaining"] = 0
+    state["effects"].append({
+        "type": "boing-jump",
+        "x1": start_x,
+        "y1": start_y - 14,
+        "x2": player["x"],
+        "y2": player["y"] - 14,
+        "life": 24,
+        "maxLife": 24,
+    })
+    sounds.append("toing")
 
 
 def update_player(player, dt):
@@ -1482,6 +1615,94 @@ def split_cheese_projectile(p):
     return children
 
 
+def split_superball_projectile(p):
+    if not p.get("superball"):
+        return None
+    level = int(p.get("superballLevel", 0))
+    max_level = int(p.get("superballMaxLevel", SUPERBALL_MAX_SPLIT_LEVEL))
+    next_split = p.get("nextSuperballSplitAge")
+    if next_split is None or level >= max_level or p.get("age", 0) < next_split:
+        return None
+
+    speed = max(190, math.hypot(p["vx"], p["vy"]) * SUPERBALL_SPLIT_SPEED)
+    base_angle = math.atan2(p["vy"], p["vx"])
+    spread = SUPERBALL_SPLIT_ANGLE * (1 + level * 0.28)
+    children = []
+    for child_index, side in enumerate((-1, 1)):
+        angle = base_angle + side * spread
+        child = p.copy()
+        child["x"] = p["x"] + math.cos(angle) * 4
+        child["y"] = p["y"] + math.sin(angle) * 4
+        child["vx"] = math.cos(angle) * speed
+        child["vy"] = math.sin(angle) * speed - (12 if level == 0 else 5)
+        child["angle"] = angle
+        child["av"] = side * (0.22 + level * 0.08)
+        child["superballLevel"] = level + 1
+        child["superballMass"] = 1
+        child["nextSuperballSplitAge"] = p.get("age", 0) + SUPERBALL_SPLIT_INTERVAL
+        child["superballMergeReadyAge"] = p.get("age", 0) + SUPERBALL_MERGE_DELAY if level + 1 >= max_level else None
+        child["shotIndex"] = int(p.get("shotIndex", 0)) * 2 + child_index
+        children.append(child)
+    sounds.append("superball")
+    return children
+
+
+def superball_can_merge(projectile):
+    if not projectile.get("superball") or int(projectile.get("superballLevel", 0)) < SUPERBALL_MAX_SPLIT_LEVEL:
+        return False
+    ready_age = projectile.get("superballMergeReadyAge")
+    return ready_age is None or projectile.get("age", 0) >= ready_age
+
+
+def merge_superballs(projectiles):
+    result = []
+    used = [False] * len(projectiles)
+    merged_any = False
+    for index, projectile in enumerate(projectiles):
+        if used[index]:
+            continue
+        if not superball_can_merge(projectile):
+            used[index] = True
+            result.append(projectile)
+            continue
+
+        group = [projectile]
+        used[index] = True
+        for other_index in range(index + 1, len(projectiles)):
+            other = projectiles[other_index]
+            if used[other_index] or not superball_can_merge(other):
+                continue
+            if other.get("owner") != projectile.get("owner"):
+                continue
+            merge_radius = SUPERBALL_MERGE_RADIUS + (projectile.get("superballMass", 1) + other.get("superballMass", 1)) * 2.2
+            if math.hypot(other["x"] - projectile["x"], other["y"] - projectile["y"]) <= merge_radius:
+                group.append(other)
+                used[other_index] = True
+
+        if len(group) == 1:
+            result.append(projectile)
+            continue
+
+        total_mass = min(SUPERBALL_MAX_MASS, sum(max(1, item.get("superballMass", 1)) for item in group))
+        weight_sum = sum(max(1, item.get("superballMass", 1)) for item in group)
+        merged = projectile.copy()
+        merged["x"] = sum(item["x"] * max(1, item.get("superballMass", 1)) for item in group) / weight_sum
+        merged["y"] = sum(item["y"] * max(1, item.get("superballMass", 1)) for item in group) / weight_sum
+        merged["vx"] = sum(item["vx"] * max(1, item.get("superballMass", 1)) for item in group) / weight_sum * 0.52
+        merged["vy"] = max(90, sum(item["vy"] * max(1, item.get("superballMass", 1)) for item in group) / weight_sum + 120)
+        merged["av"] = projectile.get("av", 0) * 0.6
+        merged["superballMass"] = total_mass
+        merged["nextSuperballSplitAge"] = None
+        merged["superballMergeReadyAge"] = None
+        merged["merged"] = True
+        result.append(merged)
+        merged_any = True
+
+    if merged_any:
+        sounds.append("superball")
+    return result
+
+
 def update_projectiles(dt):
     projectiles = state.get("projectiles", [])
     if not projectiles:
@@ -1491,6 +1712,8 @@ def update_projectiles(dt):
     exploded = False
     for p in projectiles:
         p["age"] += dt
+        if p.get("heartCooldown", 0) > 0:
+            p["heartCooldown"] = max(0, p.get("heartCooldown", 0) - dt)
         previous_x = p["x"]
         previous_y = p["y"]
         if p.get("cruise"):
@@ -1550,6 +1773,10 @@ def update_projectiles(dt):
         hit = projectile_path_hit(previous_x, previous_y, p["x"], p["y"])
         if hit is not None:
             hit_x, hit_y = hit
+            if p.get("boing"):
+                handle_boing_terrain_impact(p, hit_x, hit_y)
+                exploded = True
+                continue
             if p.get("tankType") == "nuke":
                 handle_nuke_impact(p, hit_x, hit_y, speed)
                 exploded = True
@@ -1583,6 +1810,8 @@ def update_projectiles(dt):
                 if player["health"] <= 0:
                     continue
                 contact_radius = ZOMBIE_SPAWN_RADIUS if p.get("zombie") and index != p.get("owner") else TANK_CONTACT_RADIUS
+                if p.get("superball"):
+                    contact_radius += min(18, (max(1, p.get("superballMass", 1)) ** 0.5) * 5)
                 if math.hypot(player["x"] - p["x"], player["y"] - p["y"]) < contact_radius:
                     if p.get("tankType") == "nuke":
                         handle_nuke_impact(p, p["x"], p["y"], speed + 18)
@@ -1614,8 +1843,13 @@ def update_projectiles(dt):
             if cheese_children:
                 survivors.extend(cheese_children)
             else:
-                survivors.append(p)
+                superball_children = split_superball_projectile(p)
+                if superball_children:
+                    survivors.extend(superball_children)
+                else:
+                    survivors.append(p)
 
+    survivors = merge_superballs(survivors)
     set_projectiles(survivors)
     if not survivors and state["winner"] is None:
         resolve_shot_end()
