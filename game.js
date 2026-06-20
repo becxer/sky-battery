@@ -39,7 +39,7 @@ const POWER_CHARGE_MS = 3600;
 const ARTILLERY_GROW_START = 0.15;
 const ARTILLERY_GROW_DURATION = 2.65;
 const CHEESE_SCALE_PER_STACK = 0.18;
-const CHEESE_MAX_SCALE = 2.1;
+const CHEESE_MAX_SCALE = 3.0;
 const TANK_TYPE_META = {
   dragon: { label: "D", name: "드래곤 탱크", desc: "블랙 근거리 탱크. 짧은 직선 화염으로 30-36 광역 피해를 줍니다.", color: "#050608", shell: "#ff5a1f", glow: "#ffb13b" },
   normal: { label: "N", name: "노말 탱크", desc: "기본 포탄을 안정적으로 쏘는 표준 탱크.", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
