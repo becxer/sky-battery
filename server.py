@@ -90,6 +90,7 @@ ZOMBIE_SPEED = 62
 ZOMBIE_ATTACK_RANGE = 30
 ZOMBIE_ATTACK_INTERVAL = 0.42
 ZOMBIE_ATTACK_DAMAGE = 2
+ZOMBIE_RETIRE_DAMAGE = 45
 ZOMBIE_HIT_RADIUS = 17
 ZOMBIE_SPAWN_RADIUS = 62
 ZOMBIE_MAX_COUNT = 8
@@ -1340,26 +1341,6 @@ def handle_nuke_impact(projectile, x, y, impact_speed):
         )
 
 
-def normal_direct_damage_for_speed(impact_speed):
-    return round((36 + impact_speed * 0.032) * TANK_TYPES["normal"].get("damage", 1.0))
-
-
-def projectile_direct_damage(projectile, impact_speed, x, y):
-    if projectile.get("tankType") == "nuke":
-        mark = nuke_mark_for_owner(projectile.get("owner"))
-        if mark and math.hypot(mark["x"] - x, mark["y"] - y) <= NUKE_MATCH_RADIUS:
-            return NUKE_DAMAGE
-        return NUKE_MARK_DAMAGE
-    damage_multiplier, _, base_damage = projectile_effect_multipliers(projectile)
-    if base_damage is not None:
-        return round(base_damage * damage_multiplier)
-    return round((36 + impact_speed * 0.032) * damage_multiplier)
-
-
-def projectile_can_destroy_zombie(projectile, impact_speed, x, y):
-    return projectile_direct_damage(projectile, impact_speed, x, y) >= normal_direct_damage_for_speed(impact_speed)
-
-
 def handle_boing_terrain_impact(projectile, x, y):
     owner = projectile.get("owner")
     if owner is None or owner < 0 or owner >= len(state["players"]):
@@ -1475,6 +1456,7 @@ def spawn_zombie(owner, target, x, y):
         "owner": owner,
         "dir": 1,
         "attackCooldown": 0.18,
+        "damageDealt": 0,
         "age": 0,
     }
     state["zombies"] = (state.get("zombies", []) + [zombie])[-ZOMBIE_MAX_COUNT:]
@@ -1532,15 +1514,20 @@ def update_zombies(dt):
         zombie["attackCooldown"] = max(0, zombie.get("attackCooldown", 0) - dt)
         close = abs(target["x"] - zombie["x"]) <= ZOMBIE_ATTACK_RANGE and abs(target["y"] - zombie["y"]) <= 42
         if close and zombie["attackCooldown"] <= 0:
-            target["health"] -= ZOMBIE_ATTACK_DAMAGE
+            damage_done = min(ZOMBIE_ATTACK_DAMAGE, max(0, target["health"]))
+            target["health"] -= damage_done
             target["vx"] += direction * 2.2
             target["av"] += direction * 0.035
+            zombie["damageDealt"] = zombie.get("damageDealt", 0) + damage_done
             zombie["attackCooldown"] = ZOMBIE_ATTACK_INTERVAL
             sounds.append("zombiehit")
             if target["health"] <= 0:
                 target["health"] = 0
                 retired = True
                 sounds.append("retire")
+            if zombie["damageDealt"] >= ZOMBIE_RETIRE_DAMAGE:
+                sounds.append("zombiedie")
+                continue
         next_zombies.append(zombie)
 
     state["zombies"] = next_zombies[:ZOMBIE_MAX_COUNT]
@@ -1796,10 +1783,9 @@ def update_projectiles(dt):
         if zombie_hit is not None:
             zombie_index, zombie_x, zombie_y = zombie_hit
             impact_speed = speed + 10
-            zombie_destroyed = projectile_can_destroy_zombie(p, impact_speed, zombie_x, zombie_y)
-            if zombie_destroyed and 0 <= zombie_index < len(state.get("zombies", [])):
+            if 0 <= zombie_index < len(state.get("zombies", [])):
                 state["zombies"].pop(zombie_index)
-                sounds.append("zombiedie")
+            sounds.append("zombiedie")
             if p.get("tankType") == "nuke":
                 handle_nuke_impact(p, zombie_x, zombie_y, impact_speed)
             else:
