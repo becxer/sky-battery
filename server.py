@@ -84,6 +84,8 @@ CHEESE_SPLIT_INTERVAL = 0.38
 CHEESE_SPLIT_ANGLE = math.radians(10)
 CHEESE_MAX_SPLIT_LEVEL = 3
 CHEESE_SPLIT_SPEED = 0.96
+CHEESE_SCALE_PER_STACK = 0.12
+CHEESE_MAX_SCALE = 1.72
 SUPERBALL_SPLIT_INTERVAL = 0.34
 SUPERBALL_SPLIT_ANGLE = math.radians(8)
 SUPERBALL_SPLIT_SPEED = 0.98
@@ -118,7 +120,7 @@ TANK_TYPES = {
     "poop": {"label": "Poop", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
     "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
     "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
-    "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True},
+    "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True, "effect": "cheese"},
     "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
     "healing": {"label": "Healing", "damage": 0.8, "radius": 0.9, "shots": [0], "barrels": [0], "effect": "heal"},
     "heart": {"label": "Heart", "damage": 0.82, "radius": 0.82, "shots": [0], "barrels": [0], "heart": True},
@@ -530,6 +532,18 @@ def tank_spec(player):
     return TANK_TYPES.get(player.get("tankType", "normal"), TANK_TYPES["normal"])
 
 
+def cheese_stack_count(player):
+    return max(0, int(player.get("cheeseStacks", 0)))
+
+
+def tank_size_multiplier(player):
+    return clamp(1 + cheese_stack_count(player) * CHEESE_SCALE_PER_STACK, 1, CHEESE_MAX_SCALE)
+
+
+def tank_hit_radius(player):
+    return TANK_CONTACT_RADIUS * tank_size_multiplier(player)
+
+
 def aim_min_for_player(player):
     return LASER_AIM_MIN if player.get("tankType") == "laser" else AIM_MIN
 
@@ -666,7 +680,7 @@ def raycast_laser(owner, start_x, start_y, angle, max_distance=1600):
         for index, player in enumerate(state["players"]):
             if index == owner or player["health"] <= 0:
                 continue
-            if math.hypot(player["x"] - x, player["y"] - 8 - y) <= TANK_CONTACT_RADIUS:
+            if math.hypot(player["x"] - x, player["y"] - 8 - y) <= tank_hit_radius(player):
                 return {"type": "player", "x": x, "y": y, "player": index}
         distance += step
     return {"type": "air", "x": start_x + math.cos(angle) * max_distance, "y": start_y + math.sin(angle) * max_distance}
@@ -801,6 +815,7 @@ def make_player(index, x):
         "stuckTurns": 0,
         "poopDamage": 0,
         "poopStacks": 0,
+        "cheeseStacks": 0,
         "respawnTimer": 0,
         "isDummy": False,
     }
@@ -815,6 +830,7 @@ def make_dummy_target(index, x):
         "moveRemaining": 0,
         "poopDamage": 0,
         "poopStacks": 0,
+        "cheeseStacks": 0,
         "respawnTimer": 0,
         "isDummy": True,
     })
@@ -1051,10 +1067,12 @@ def fire_dragon(player, owner):
         if index == owner or target["health"] <= 0:
             continue
         distance, t = point_segment_distance(target["x"], target["y"] - 8, start_x, start_y, end_x, end_y)
-        if distance > DRAGON_FLAME_WIDTH:
+        extra_hit_radius = max(0, tank_hit_radius(target) - TANK_CONTACT_RADIUS)
+        effective_distance = max(0, distance - extra_hit_radius)
+        if effective_distance > DRAGON_FLAME_WIDTH:
             continue
         target["health"] -= damage
-        push = 1 - distance / max(1, DRAGON_FLAME_WIDTH)
+        push = 1 - effective_distance / max(1, DRAGON_FLAME_WIDTH)
         target["vx"] += math.cos(angle) * (5 + push * 7)
         target["vy"] += math.sin(angle) * (3 + push * 5) - push * 4
         target["av"] += target["dir"] * 0.1
@@ -1320,6 +1338,18 @@ def damage_island(platform, x, y, radius):
     return pieces
 
 
+def add_cheese_stack(player):
+    player["cheeseStacks"] = cheese_stack_count(player) + 1
+    state["effects"].append({
+        "type": "cheese-stack",
+        "x": player["x"],
+        "y": player["y"] - 18 * tank_size_multiplier(player),
+        "stack": player["cheeseStacks"],
+        "life": 24,
+        "maxLife": 24,
+    })
+
+
 def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, base_damage=None, effect=None, owner=None, advance_turn=True):
     base_radius = clamp(14 + impact_speed * EXPLOSION_SPEED_SCALE, EXPLOSION_MIN_RADIUS, EXPLOSION_MAX_RADIUS)
     radius_cap = EXPLOSION_MAX_RADIUS * max(1.0, radius_multiplier)
@@ -1337,8 +1367,10 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
         dy = player["y"] - y
         distance = math.hypot(dx, dy)
         damage_radius = radius * EXPLOSION_DAMAGE_SCALE
-        if distance < damage_radius:
-            falloff = 1 - distance / damage_radius
+        extra_hit_radius = max(0, tank_hit_radius(player) - TANK_CONTACT_RADIUS)
+        effective_distance = max(0, distance - extra_hit_radius)
+        if effective_distance < damage_radius:
+            falloff = 1 - effective_distance / damage_radius
             if effect == "heal" and index == owner:
                 missing = max(0, 100 - player["health"])
                 heal_amount = round(missing * HEAL_SELF_RATIO)
@@ -1370,6 +1402,8 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
             if player["health"] <= 0:
                 player["health"] = 0
                 retired = True
+            elif effect == "cheese":
+                add_cheese_stack(player)
             player["vx"] += (dx / max(distance, 1)) * falloff * 9
             player["vy"] += (dy / max(distance, 1)) * falloff * 9 - falloff * 8
             player["av"] += falloff * player["dir"] * 0.12
@@ -1395,6 +1429,8 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
     sounds.append("explode")
     if effect == "poop":
         sounds.append("poop")
+    if effect == "cheese" and damaged:
+        sounds.append("cheese")
     if healed:
         sounds.append("heal")
     if damaged:
@@ -1529,6 +1565,7 @@ def respawn_dummy_target(player):
     player["stuckTurns"] = 0
     player["poopDamage"] = 0
     player["poopStacks"] = 0
+    player["cheeseStacks"] = 0
     player["respawnTimer"] = 0
     player["angleBody"] = ground_angle_at(player["x"], player["y"])
     if state["players"] and not state["players"][0].get("isDummy"):
@@ -1832,9 +1869,11 @@ def projectile_player_direct_hit(projectile, speed):
     for index, player in enumerate(state["players"]):
         if player["health"] <= 0:
             continue
-        contact_radius = ZOMBIE_SPAWN_RADIUS if projectile.get("zombie") and index != projectile.get("owner") else TANK_CONTACT_RADIUS
+        contact_radius = tank_hit_radius(player)
+        if projectile.get("zombie") and index != projectile.get("owner"):
+            contact_radius = max(contact_radius, ZOMBIE_SPAWN_RADIUS)
         if projectile.get("boing"):
-            contact_radius = BOING_CONTACT_RADIUS
+            contact_radius = max(BOING_CONTACT_RADIUS, tank_hit_radius(player))
         if projectile.get("superball"):
             contact_radius += min(18, (max(1, projectile.get("superballMass", 1)) ** 0.5) * 5)
         if math.hypot(player["x"] - projectile["x"], player["y"] - projectile["y"]) >= contact_radius:
@@ -2015,7 +2054,7 @@ def snapshot():
         "platformMask": state["platformMask"],
         "platforms": state["platforms"],
         "players": [
-            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "respawnTimer", "isDummy")}
+            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "cheeseStacks", "respawnTimer", "isDummy")}
             for p in state["players"]
         ],
         "playerCount": state["playerCount"],

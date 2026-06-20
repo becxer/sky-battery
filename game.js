@@ -38,6 +38,8 @@ const POWER_MAX = 100;
 const POWER_CHARGE_MS = 3600;
 const ARTILLERY_GROW_START = 0.15;
 const ARTILLERY_GROW_DURATION = 2.65;
+const CHEESE_SCALE_PER_STACK = 0.12;
+const CHEESE_MAX_SCALE = 1.72;
 const TANK_TYPE_META = {
   dragon: { label: "D", name: "드래곤 탱크", desc: "블랙 근거리 탱크. 짧은 직선 화염으로 30-36 광역 피해를 줍니다.", color: "#050608", shell: "#ff5a1f", glow: "#ffb13b" },
   normal: { label: "N", name: "노말 탱크", desc: "기본 포탄을 안정적으로 쏘는 표준 탱크.", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
@@ -50,7 +52,7 @@ const TANK_TYPE_META = {
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
-  cheese: { label: "CH", name: "치즈 탱크", desc: "치즈 조각이 계속 쪼개져 여러 조각으로 떨어집니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
+  cheese: { label: "CH", name: "치즈 탱크", desc: "맞은 탱크를 먹여서 키우고 피격 판정을 넓힙니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
   zombie: { label: "Z", name: "좀비 탱크", desc: "맞은 근처에 좀비를 풀어 목표를 따라다니게 합니다.", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
   healing: { label: "H", name: "힐링탱크", desc: "자신에게 맞추면 잃은 체력의 일부를 반짝 회복합니다.", color: "#8fffe8", shell: "#9dfff1", glow: "#fff7a8" },
   heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space를 누를 때마다 크기가 바뀌고 가끔 왕하트가 나옵니다.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
@@ -969,6 +971,18 @@ function roundRect(x, y, width, height, radius) {
   ctx.closePath();
 }
 
+function cheeseStackCount(player) {
+  return Math.max(0, Math.floor(player.cheeseStacks || 0));
+}
+
+function tankSizeMultiplier(player) {
+  return clamp(1 + cheeseStackCount(player) * CHEESE_SCALE_PER_STACK, 1, CHEESE_MAX_SCALE);
+}
+
+function tankDrawScale(player) {
+  return TANK_SCALE * tankSizeMultiplier(player);
+}
+
 function drawTank(player, index) {
   if (player.health <= 0) {
     drawDestroyedTank(player);
@@ -977,11 +991,13 @@ function drawTank(player, index) {
 
   const active = latest && index === latest.current && latest.winner === null;
   const sprite = sprites.tanks[index % sprites.tanks.length];
+  const size = tankSizeMultiplier(player);
+  const scale = tankDrawScale(player);
   if (sprite.complete && sprite.naturalWidth) {
     ctx.save();
     ctx.translate(player.x, player.y);
     ctx.rotate(player.angleBody);
-    ctx.scale(TANK_SCALE, TANK_SCALE);
+    ctx.scale(scale, scale);
     ctx.drawImage(sprite, -31, -30, 62, 38);
     ctx.restore();
 
@@ -992,7 +1008,7 @@ function drawTank(player, index) {
       ctx.strokeStyle = "#fff1a8";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(player.x, player.y - 4, 14, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.arc(player.x, player.y - 4 * size, 14 * size, Math.PI * 1.08, Math.PI * 1.92);
       ctx.stroke();
     }
     return;
@@ -1001,7 +1017,7 @@ function drawTank(player, index) {
   ctx.save();
   ctx.translate(player.x, player.y);
   ctx.rotate(player.angleBody);
-  ctx.scale(TANK_SCALE, TANK_SCALE);
+  ctx.scale(scale, scale);
   ctx.fillStyle = "rgba(0, 0, 0, 0.30)";
   ctx.beginPath();
   ctx.ellipse(0, 19, 34, 9, 0, 0, Math.PI * 2);
@@ -1040,16 +1056,17 @@ function drawTank(player, index) {
     ctx.strokeStyle = "#fff1a8";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(player.x, player.y - 4, 20, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.arc(player.x, player.y - 4 * size, 20 * size, Math.PI * 1.1, Math.PI * 1.9);
     ctx.stroke();
   }
 }
 
 function drawDestroyedTank(player) {
+  const scale = tankDrawScale(player);
   ctx.save();
-  ctx.translate(player.x, player.y + 1 * TANK_SCALE);
+  ctx.translate(player.x, player.y + 1 * scale);
   ctx.rotate(player.angleBody + 0.08);
-  ctx.scale(TANK_SCALE, TANK_SCALE);
+  ctx.scale(scale, scale);
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
   ctx.beginPath();
@@ -1104,7 +1121,7 @@ function drawNameTag(player, index) {
   ctx.textBaseline = "middle";
   const width = Math.min(120, Math.max(54, ctx.measureText(text).width + 16));
   const x = clamp(player.x, width / 2 + 8, W - width / 2 - 8);
-  const y = Math.max(22, player.y - 42);
+  const y = Math.max(22, player.y - 42 * tankSizeMultiplier(player));
   ctx.fillStyle = knockedOut
     ? "rgba(25, 28, 32, 0.72)"
     : isActive ? "rgba(255, 241, 168, 0.94)" : "rgba(12, 17, 24, 0.78)";
@@ -1136,8 +1153,8 @@ function drawPoopStacks() {
     const width = Math.max(62, ctx.measureText(label).width + 25);
     const height = 18;
     const x = clamp(player.x, width / 2 + 6, W - width / 2 - 6);
-    const nameY = Math.max(22, player.y - 42);
-    const y = Math.max(12, nameY - 24);
+    const nameY = Math.max(22, player.y - 42 * tankSizeMultiplier(player));
+    const y = Math.max(12, nameY - (cheeseStackCount(player) ? 46 : 24));
 
     ctx.fillStyle = "rgba(75, 44, 24, 0.92)";
     roundRect(x - width / 2, y - height / 2, width, height, 7);
@@ -1159,16 +1176,61 @@ function drawPoopStacks() {
   });
 }
 
+function drawCheeseStacks() {
+  if (!latest) return;
+  latest.players.forEach((player) => {
+    const stacks = cheeseStackCount(player);
+    if (!stacks || player.health <= 0) return;
+
+    const label = `치즈 x${stacks}`;
+    ctx.save();
+    ctx.font = "800 11px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const width = Math.max(68, ctx.measureText(label).width + 28);
+    const height = 18;
+    const x = clamp(player.x, width / 2 + 6, W - width / 2 - 6);
+    const nameY = Math.max(22, player.y - 42 * tankSizeMultiplier(player));
+    const y = Math.max(12, nameY - 24);
+
+    ctx.fillStyle = "rgba(86, 57, 8, 0.92)";
+    roundRect(x - width / 2, y - height / 2, width, height, 7);
+    ctx.fill();
+    ctx.strokeStyle = "#ffd84d";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffd84d";
+    ctx.beginPath();
+    ctx.moveTo(x - width / 2 + 7, y + 5);
+    ctx.lineTo(x - width / 2 + 22, y);
+    ctx.lineTo(x - width / 2 + 17, y - 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#9f7113";
+    [[13, -1, 1.8], [18, 2, 1.4]].forEach(([dx, dy, r]) => {
+      ctx.beginPath();
+      ctx.arc(x - width / 2 + dx, y + dy, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.fillStyle = "#fff2a0";
+    ctx.fillText(label, x - width / 2 + 27, y + 0.2);
+    ctx.restore();
+  });
+}
+
 function drawMoveBars() {
   if (!latest) return;
   latest.players.forEach((player, index) => {
     if (player.isDummy) return;
     if (player.health <= 0) return;
-    const width = 32;
+    const size = tankSizeMultiplier(player);
+    const width = 32 * Math.min(1.35, size);
     const height = 5;
     const ratio = clamp((player.moveRemaining || 0) / 150, 0, 1);
     const x = player.x - width / 2;
-    const y = player.y + 11;
+    const y = player.y + 11 * size;
     ctx.fillStyle = "rgba(8, 12, 16, 0.62)";
     roundRect(x, y, width, height, 3);
     ctx.fill();
@@ -1267,7 +1329,8 @@ function drawTankTypeTrim(player) {
   ctx.save();
   ctx.translate(player.x, player.y);
   ctx.rotate(player.angleBody);
-  ctx.scale(TANK_SCALE, TANK_SCALE);
+  const scale = tankDrawScale(player);
+  ctx.scale(scale, scale);
 
   if (type === "dragon") {
     const body = ctx.createLinearGradient(-33, -32, 34, 10);
@@ -1593,10 +1656,11 @@ function drawBarrel(player, barrel, offset = 0, options = {}) {
   const thickness = options.thickness || 6;
   const tip = options.tip || 4;
   const accent = options.accent || "#46505a";
+  const scale = tankDrawScale(player);
   ctx.save();
-  ctx.translate(player.x, player.y - 12 * TANK_SCALE);
+  ctx.translate(player.x, player.y - 12 * scale);
   ctx.rotate(angle);
-  ctx.scale(TANK_SCALE, TANK_SCALE);
+  ctx.scale(scale, scale);
   ctx.translate(0, offset);
   const barrelGradient = ctx.createLinearGradient(0, -5, 48, 5);
   barrelGradient.addColorStop(0, "#20262e");
@@ -2288,6 +2352,21 @@ function drawEffects() {
         ctx.stroke();
       }
       ctx.restore();
+    } else if (effect.type === "cheese-stack") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const pulse = 10 + (1 - fade) * 34;
+      ctx.strokeStyle = `rgba(255, 216, 77, ${0.88 * fade})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255, 242, 160, ${0.9 * fade})`;
+      ctx.font = "900 16px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`+${effect.stack || 1}`, effect.x, effect.y - 2);
+      ctx.restore();
     } else if (effect.type === "heart-shift") {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
@@ -2353,15 +2432,17 @@ function drawParticles() {
 
 function drawHealthBars() {
   latest.players.forEach((player) => {
-    const width = 44;
+    const size = tankSizeMultiplier(player);
+    const width = 44 * Math.min(1.4, size);
     const height = 8;
+    const y = player.y - 33 * size;
     const value = clamp(player.health, 0, 100) / 100;
     const healthColor = player.health <= 10 ? "#ff3030" : player.health <= 50 ? "#ffe23f" : "#39ff14";
     ctx.fillStyle = "rgba(0,0,0,0.48)";
-    roundRect(player.x - width / 2, player.y - 33, width, height, 4);
+    roundRect(player.x - width / 2, y, width, height, 4);
     ctx.fill();
     ctx.fillStyle = healthColor;
-    roundRect(player.x - width / 2, player.y - 33, width * value, height, 4);
+    roundRect(player.x - width / 2, y, width * value, height, 4);
     ctx.fill();
   });
 }
@@ -2441,6 +2522,7 @@ function render() {
     latest.players.forEach(drawTank);
     drawMoveBars();
     latest.players.forEach(drawNameTag);
+    drawCheeseStacks();
     drawPoopStacks();
     drawProjectile();
     drawEffects();

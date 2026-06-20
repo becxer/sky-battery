@@ -187,7 +187,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Poop Tank | Adds poop stacks that reduce movement and increase later poop damage. |
 | Nuke Tank | Marks a target point first; hitting the same point again triggers a huge blast. |
 | Cruise Missile | Launches a slow missile; Fire or Space applies lift during flight. |
-| Cheese Tank | Cheese projectile splits repeatedly into multiple pieces. |
+| Cheese Tank | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow larger, and become easier to hit. |
 | Zombie Tank | Throws a stone that releases a zombie near impact; zombies can be shot down, and retire after dealing about one normal shell of total damage. |
 | Healing Tank | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
 | Heart Tank | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
