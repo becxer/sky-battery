@@ -1006,6 +1006,7 @@ function drawTank(player, index) {
     ctx.restore();
 
     drawTankTypeTrim(player);
+    drawTankEye(player);
     drawTankBarrels(player);
 
     if (active) {
@@ -1054,6 +1055,7 @@ function drawTank(player, index) {
   ctx.restore();
 
   drawTankTypeTrim(player);
+  drawTankEye(player);
   drawTankBarrels(player);
 
   if (active) {
@@ -1063,6 +1065,48 @@ function drawTank(player, index) {
     ctx.arc(player.x, player.y - 4 * size, 20 * size, Math.PI * 1.1, Math.PI * 1.9);
     ctx.stroke();
   }
+}
+
+function drawTankEye(player) {
+  const scale = tankDrawScale(player);
+  const side = player.dir === 1 ? 1 : -1;
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(player.angleBody);
+  ctx.scale(scale, scale);
+
+  const eyeX = side * 3;
+  const eyeY = -35;
+  const eyeRadius = 13;
+  const eye = ctx.createRadialGradient(eyeX - 4, eyeY - 5, 2, eyeX, eyeY, eyeRadius + 2);
+  eye.addColorStop(0, "#ffffff");
+  eye.addColorStop(0.68, "#f4fbff");
+  eye.addColorStop(1, "#c8d3dd");
+  ctx.fillStyle = eye;
+  ctx.beginPath();
+  ctx.arc(eyeX, eyeY, eyeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#161b20";
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+
+  const pupilX = eyeX + side * 4;
+  const pupilY = eyeY - 2;
+  const iris = ctx.createRadialGradient(pupilX - side * 1.6, pupilY - 2.5, 1, pupilX, pupilY, 6);
+  iris.addColorStop(0, "#dfffff");
+  iris.addColorStop(0.42, "#57c8df");
+  iris.addColorStop(1, "#071017");
+  ctx.fillStyle = iris;
+  ctx.beginPath();
+  ctx.arc(pupilX, pupilY, 5.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.beginPath();
+  ctx.arc(pupilX - side * 2.3, pupilY - 3.1, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
 }
 
 function drawDestroyedTank(player) {
