@@ -1340,6 +1340,26 @@ def handle_nuke_impact(projectile, x, y, impact_speed):
         )
 
 
+def normal_direct_damage_for_speed(impact_speed):
+    return round((36 + impact_speed * 0.032) * TANK_TYPES["normal"].get("damage", 1.0))
+
+
+def projectile_direct_damage(projectile, impact_speed, x, y):
+    if projectile.get("tankType") == "nuke":
+        mark = nuke_mark_for_owner(projectile.get("owner"))
+        if mark and math.hypot(mark["x"] - x, mark["y"] - y) <= NUKE_MATCH_RADIUS:
+            return NUKE_DAMAGE
+        return NUKE_MARK_DAMAGE
+    damage_multiplier, _, base_damage = projectile_effect_multipliers(projectile)
+    if base_damage is not None:
+        return round(base_damage * damage_multiplier)
+    return round((36 + impact_speed * 0.032) * damage_multiplier)
+
+
+def projectile_can_destroy_zombie(projectile, impact_speed, x, y):
+    return projectile_direct_damage(projectile, impact_speed, x, y) >= normal_direct_damage_for_speed(impact_speed)
+
+
 def handle_boing_terrain_impact(projectile, x, y):
     owner = projectile.get("owner")
     if owner is None or owner < 0 or owner >= len(state["players"]):
@@ -1775,17 +1795,19 @@ def update_projectiles(dt):
         zombie_hit = projectile_zombie_hit(previous_x, previous_y, p["x"], p["y"])
         if zombie_hit is not None:
             zombie_index, zombie_x, zombie_y = zombie_hit
-            if 0 <= zombie_index < len(state.get("zombies", [])):
+            impact_speed = speed + 10
+            zombie_destroyed = projectile_can_destroy_zombie(p, impact_speed, zombie_x, zombie_y)
+            if zombie_destroyed and 0 <= zombie_index < len(state.get("zombies", [])):
                 state["zombies"].pop(zombie_index)
-            sounds.append("zombiedie")
+                sounds.append("zombiedie")
             if p.get("tankType") == "nuke":
-                handle_nuke_impact(p, zombie_x, zombie_y, speed + 10)
+                handle_nuke_impact(p, zombie_x, zombie_y, impact_speed)
             else:
                 damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
                 explode(
                     zombie_x,
                     zombie_y,
-                    speed + 10,
+                    impact_speed,
                     damage_multiplier,
                     radius_multiplier,
                     base_damage,

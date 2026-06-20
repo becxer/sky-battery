@@ -187,7 +187,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Nuke Tank | Marks a target point first; hitting the same point again triggers a huge blast. |
 | Cruise Missile | Launches a slow missile; Fire or Space applies lift during flight. |
 | Cheese Tank | Cheese projectile splits repeatedly into multiple pieces. |
-| Zombie Tank | Throws a stone that releases a zombie near impact; zombies chase and tap-damage tanks. |
+| Zombie Tank | Throws a stone that releases a zombie near impact; zombies chase tanks and only vanish when hit by normal-class damage or stronger. |
 | Healing Tank | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
 | Heart Tank | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
 | Pujik Tank | Launches a butt-shaped projectile that can stop midair and drop poop. |
