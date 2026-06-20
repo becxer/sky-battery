@@ -52,11 +52,11 @@ const TANK_TYPE_META = {
   cheese: { label: "CH", name: "치즈 탱크", desc: "치즈 조각이 계속 쪼개져 여러 조각으로 떨어집니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
   zombie: { label: "Z", name: "좀비 탱크", desc: "맞은 근처에 좀비를 풀어 목표를 따라다니게 합니다.", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
   healing: { label: "H", name: "힐링탱크", desc: "자신에게 맞추면 잃은 체력의 일부를 반짝 회복합니다.", color: "#8fffe8", shell: "#9dfff1", glow: "#fff7a8" },
-  heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space로 하트 크기와 위력을 랜덤 변경.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
+  heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space로 크기를 바꾸며 가끔 왕하트가 나옵니다.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
   butt: { label: "B", name: "뿌직탱크", desc: "비행 중 Fire/Space를 누르면 그 자리에서 똥을 떨어뜨립니다.", color: "#f0b28f", shell: "#f2b090", glow: "#ffe0c9" },
   poopdrop: { label: "P", name: "똥", desc: "떨어지는 똥 포탄.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   boing: { label: "BO", name: "또잉탱크", desc: "지형에 맞으면 그 지점으로 또잉 점프 이동합니다.", color: "#b68cff", shell: "#b68cff", glow: "#f0dcff" },
-  superball: { label: "SB", name: "슈퍼볼탱크", desc: "흰 공 5발이 20발까지 갈라진 뒤 합쳐져 커집니다.", color: "#ffffff", shell: "#ffffff", glow: "#eaf7ff" },
+  superball: { label: "B", name: "볼탱크", desc: "흰 공 5발이 20발까지 갈라진 뒤 합쳐져 커집니다.", color: "#ffffff", shell: "#ffffff", glow: "#eaf7ff" },
   super: { label: "S", name: "슈퍼탱크", desc: "드물게 등장하는 다섯 발짜리 무지개 유도 미사일.", color: "#ffe23f", shell: "#39ff14", glow: "#fff1a8" },
 };
 const SUPER_MISSILE_COLORS = ["#ff3030", "#ff9f1a", "#ffe23f", "#39ff14", "#4aa3ff"];
@@ -253,9 +253,10 @@ function playSound(name) {
     tone(520, 0.08, "triangle", 0.05, 760);
     setTimeout(() => tone(240, 0.1, "sine", 0.035, 180), 80);
   } else if (name === "heal") {
-    tone(640, 0.08, "sine", 0.045, 920);
-    setTimeout(() => tone(1040, 0.08, "triangle", 0.04, 1440), 80);
-    setTimeout(() => tone(1520, 0.1, "sine", 0.035, 1880), 160);
+    tone(1180, 0.08, "sine", 0.038, 1720);
+    setTimeout(() => tone(1840, 0.12, "triangle", 0.045, 1320), 55);
+    setTimeout(() => tone(1360, 0.08, "sine", 0.035, 1980), 170);
+    setTimeout(() => tone(2160, 0.16, "triangle", 0.04, 1460), 225);
   } else if (name === "heart") {
     tone(760, 0.06, "sine", 0.04, 1080);
     setTimeout(() => tone(560, 0.06, "triangle", 0.035, 880), 65);
@@ -1845,7 +1846,7 @@ function drawHealingProjectile() {
 }
 
 function drawHeartProjectile(p) {
-  const scale = clamp(p.heartScale || 1, 0.55, 2.0);
+  const scale = clamp(p.heartScale || 1, 0.55, 3.6);
   ctx.save();
   ctx.scale(scale, scale);
   ctx.fillStyle = "#ff5ebd";
@@ -2085,7 +2086,7 @@ function drawOneProjectile(p) {
   const flightAngle = Math.atan2(p.vy || 0, p.vx || 1);
   const visualScale = p.tankType === "cruise"
     ? cruiseProjectileScale(p)
-    : p.tankType === "heart" ? clamp(p.heartScale || 1, 0.55, 2.0)
+    : p.tankType === "heart" ? clamp(p.heartScale || 1, 0.55, 3.6)
       : p.tankType === "superball" ? superballProjectileScale(p) : 1;
   const tailX = p.x - Math.cos(flightAngle) * 14 * visualScale;
   const tailY = p.y - Math.sin(flightAngle) * 14 * visualScale;

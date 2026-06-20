@@ -436,6 +436,7 @@ button.danger {
 .hint {
   margin: 8px 2px 0;
   font-size: 14px;
+  text-align: center;
 }
 
 .host-shell {
@@ -575,7 +576,11 @@ button.danger {
   }
 
   .hint {
-    display: none;
+    display: block;
+    margin-top: 6px;
+    padding: 0 8px;
+    font-size: 12px;
+    text-align: center;
   }
 
   .host-actions {

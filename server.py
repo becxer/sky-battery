@@ -20,6 +20,7 @@ TANK_EDGE_MARGIN = 20
 TANK_FIRE_DISTANCE = 19
 TANK_MUZZLE_Y = 8
 TANK_CONTACT_RADIUS = 12
+BOING_CONTACT_RADIUS = 22
 TANK_BOTTOM_OFFSET = TANK_GROUND_OFFSET
 TANK_SLOPE_SAMPLE = 18
 TANK_MAX_BODY_ANGLE = math.radians(28)
@@ -95,9 +96,12 @@ ZOMBIE_HIT_RADIUS = 17
 ZOMBIE_SPAWN_RADIUS = 62
 ZOMBIE_MAX_COUNT = 8
 HEAL_SELF_RATIO = 0.2
-HEART_RESIZE_COOLDOWN = 0.7
+HEART_RESIZE_COOLDOWN = 0.2
 HEART_MIN_SCALE = 0.65
 HEART_MAX_SCALE = 1.85
+HEART_HUGE_CHANCE = 0.08
+HEART_HUGE_MIN_SCALE = 2.8
+HEART_HUGE_MAX_SCALE = 3.6
 TANK_TYPES = {
     "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
     "multi": {"label": "Triple", "damage": 0.75, "radius": 0.82, "shots": [-3, 0, 3], "barrels": [-6, 0, 6]},
@@ -116,7 +120,7 @@ TANK_TYPES = {
     "butt": {"label": "Pujik", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop", "butt": True},
     "boing": {"label": "Boing", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "boing": True},
     "superball": {
-        "label": "Superball",
+        "label": "Ball",
         "damage": 0.18,
         "radius": 0.52,
         "shots": [-9, -4.5, 0, 4.5, 9],
@@ -151,7 +155,7 @@ TANK_TYPE_WEIGHTS = {
     "heart": 18,
     "butt": 18,
     "boing": 18,
-    "superball": 6,
+    "superball": 18,
     "super": 1,
 }
 
@@ -540,12 +544,18 @@ def artillery_radius_multiplier_for_age(age):
     return ARTILLERY_MIN_RADIUS + (ARTILLERY_MAX_RADIUS - ARTILLERY_MIN_RADIUS) * artillery_flight_factor(age)
 
 
+def random_heart_scale():
+    if random.random() < HEART_HUGE_CHANCE:
+        return random.uniform(HEART_HUGE_MIN_SCALE, HEART_HUGE_MAX_SCALE)
+    return random.uniform(HEART_MIN_SCALE, HEART_MAX_SCALE)
+
+
 def projectile_effect_multipliers(projectile):
     damage = projectile.get("damageMultiplier", 1.0)
     radius = projectile.get("radiusMultiplier", 1.0)
     base_damage = projectile.get("baseDamage")
     if projectile.get("heart"):
-        heart_scale = clamp(projectile.get("heartScale", 1.0), HEART_MIN_SCALE, HEART_MAX_SCALE)
+        heart_scale = clamp(projectile.get("heartScale", 1.0), HEART_MIN_SCALE, HEART_HUGE_MAX_SCALE)
         damage *= heart_scale
         radius *= heart_scale
     if projectile.get("superball"):
@@ -1002,7 +1012,7 @@ def fire_for(client_id):
             "nextSplitAge": CHEESE_SPLIT_INTERVAL if spec.get("cheese") else None,
             "zombie": bool(spec.get("zombie")),
             "heart": bool(spec.get("heart")),
-            "heartScale": random.uniform(HEART_MIN_SCALE, HEART_MAX_SCALE) if spec.get("heart") else 1.0,
+            "heartScale": random_heart_scale() if spec.get("heart") else 1.0,
             "heartCooldown": 0,
             "butt": bool(spec.get("butt")),
             "buttDropped": False,
@@ -1072,7 +1082,7 @@ def boost_for(client_id):
         elif projectile.get("heart"):
             if projectile.get("heartCooldown", 0) > 0:
                 continue
-            projectile["heartScale"] = random.uniform(HEART_MIN_SCALE, HEART_MAX_SCALE)
+            projectile["heartScale"] = random_heart_scale()
             projectile["heartCooldown"] = HEART_RESIZE_COOLDOWN
             state["effects"].append({
                 "type": "heart-shift",
@@ -1703,6 +1713,41 @@ def merge_superballs(projectiles):
     return result
 
 
+def projectile_player_direct_hit(projectile, speed):
+    if projectile["age"] <= 0.18:
+        return False
+    for index, player in enumerate(state["players"]):
+        if player["health"] <= 0:
+            continue
+        contact_radius = ZOMBIE_SPAWN_RADIUS if projectile.get("zombie") and index != projectile.get("owner") else TANK_CONTACT_RADIUS
+        if projectile.get("boing"):
+            contact_radius = BOING_CONTACT_RADIUS
+        if projectile.get("superball"):
+            contact_radius += min(18, (max(1, projectile.get("superballMass", 1)) ** 0.5) * 5)
+        if math.hypot(player["x"] - projectile["x"], player["y"] - projectile["y"]) >= contact_radius:
+            continue
+        if projectile.get("tankType") == "nuke":
+            handle_nuke_impact(projectile, projectile["x"], projectile["y"], speed + 18)
+            return True
+        if projectile.get("zombie"):
+            handle_zombie_impact(projectile, projectile["x"], projectile["y"], speed + 18)
+            return True
+        damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(projectile)
+        explode(
+            projectile["x"],
+            projectile["y"],
+            speed + 18,
+            damage_multiplier,
+            radius_multiplier,
+            base_damage,
+            projectile.get("effect"),
+            projectile.get("owner"),
+            advance_turn=False,
+        )
+        return True
+    return False
+
+
 def update_projectiles(dt):
     projectiles = state.get("projectiles", [])
     if not projectiles:
@@ -1770,6 +1815,10 @@ def update_projectiles(dt):
             exploded = True
             continue
 
+        if projectile_player_direct_hit(p, speed):
+            exploded = True
+            continue
+
         hit = projectile_path_hit(previous_x, previous_y, p["x"], p["y"])
         if hit is not None:
             hit_x, hit_y = hit
@@ -1804,50 +1853,15 @@ def update_projectiles(dt):
             exploded = True
             continue
 
-        direct_hit = False
-        if p["age"] > 0.18:
-            for index, player in enumerate(state["players"]):
-                if player["health"] <= 0:
-                    continue
-                contact_radius = ZOMBIE_SPAWN_RADIUS if p.get("zombie") and index != p.get("owner") else TANK_CONTACT_RADIUS
-                if p.get("superball"):
-                    contact_radius += min(18, (max(1, p.get("superballMass", 1)) ** 0.5) * 5)
-                if math.hypot(player["x"] - p["x"], player["y"] - p["y"]) < contact_radius:
-                    if p.get("tankType") == "nuke":
-                        handle_nuke_impact(p, p["x"], p["y"], speed + 18)
-                        exploded = True
-                        direct_hit = True
-                        break
-                    if p.get("zombie"):
-                        handle_zombie_impact(p, p["x"], p["y"], speed + 18)
-                        exploded = True
-                        direct_hit = True
-                        break
-                    damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
-                    explode(
-                        p["x"],
-                        p["y"],
-                        speed + 18,
-                        damage_multiplier,
-                        radius_multiplier,
-                        base_damage,
-                        p.get("effect"),
-                        p.get("owner"),
-                        advance_turn=False,
-                    )
-                    exploded = True
-                    direct_hit = True
-                    break
-        if not direct_hit:
-            cheese_children = split_cheese_projectile(p)
-            if cheese_children:
-                survivors.extend(cheese_children)
+        cheese_children = split_cheese_projectile(p)
+        if cheese_children:
+            survivors.extend(cheese_children)
+        else:
+            superball_children = split_superball_projectile(p)
+            if superball_children:
+                survivors.extend(superball_children)
             else:
-                superball_children = split_superball_projectile(p)
-                if superball_children:
-                    survivors.extend(superball_children)
-                else:
-                    survivors.append(p)
+                survivors.append(p)
 
     survivors = merge_superballs(survivors)
     set_projectiles(survivors)
