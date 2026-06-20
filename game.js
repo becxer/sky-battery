@@ -38,12 +38,12 @@ const POWER_MAX = 100;
 const POWER_CHARGE_MS = 3600;
 const ARTILLERY_GROW_START = 0.15;
 const ARTILLERY_GROW_DURATION = 2.65;
-const CHEESE_SCALE_PER_STACK = 0.12;
-const CHEESE_MAX_SCALE = 1.72;
+const CHEESE_SCALE_PER_STACK = 0.18;
+const CHEESE_MAX_SCALE = 2.1;
 const TANK_TYPE_META = {
   dragon: { label: "D", name: "드래곤 탱크", desc: "블랙 근거리 탱크. 짧은 직선 화염으로 30-36 광역 피해를 줍니다.", color: "#050608", shell: "#ff5a1f", glow: "#ffb13b" },
   normal: { label: "N", name: "노말 탱크", desc: "기본 포탄을 안정적으로 쏘는 표준 탱크.", color: "#5fb8ff", shell: "#1f252c", glow: "#ffcd6f" },
-  shield: { label: "S", name: "쉴드 탱크", desc: "공격력은 낮지만 1회 공격을 막고 3턴 뒤 쉴드가 돌아옵니다.", color: "#6de7ff", shell: "#2f7dff", glow: "#d8ffff" },
+  shield: { label: "S", name: "쉴드 탱크", desc: "공격력은 낮지만 1회 공격을 막고 2턴 뒤 쉴드가 돌아옵니다.", color: "#6de7ff", shell: "#2f7dff", glow: "#d8ffff" },
   multi: { label: "III", name: "멀티미사일", desc: "세 발을 동시에 흩뿌려 넓게 압박합니다.", color: "#74d7ff", shell: "#1f252c", glow: "#ffcd6f" },
   red: { label: "R", name: "빨콩탱크", desc: "작은 폭발 대신 매우 강한 빨간 핵심탄을 쏩니다.", color: "#ff4848", shell: "#ff3030", glow: "#ff8674" },
   missile: { label: "M", name: "유도탄 탱크", desc: "내려오며 가까운 목표를 강하게 추적하는 약한 유도탄.", color: "#39ff14", shell: "#39ff14", glow: "#baffee" },
@@ -1429,6 +1429,39 @@ function drawTankTypeTrim(player) {
     ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
     roundRect(-24, -24, 48, 4, 2);
     ctx.fill();
+    const side = player.dir === 1 ? 1 : -1;
+    ctx.save();
+    ctx.translate(side * 27, -15);
+    ctx.scale(side, 1);
+    ctx.strokeStyle = "rgba(16, 42, 74, 0.72)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-14, 0);
+    ctx.lineTo(-3, 3);
+    ctx.stroke();
+    const shieldPlate = ctx.createLinearGradient(-10, -24, 20, 20);
+    shieldPlate.addColorStop(0, "#f4ffff");
+    shieldPlate.addColorStop(0.45, "#79eaff");
+    shieldPlate.addColorStop(1, "#255dcc");
+    ctx.fillStyle = shieldPlate;
+    ctx.beginPath();
+    ctx.moveTo(-4, -24);
+    ctx.quadraticCurveTo(18, -20, 20, -4);
+    ctx.quadraticCurveTo(17, 12, 2, 22);
+    ctx.quadraticCurveTo(-12, 10, -12, -6);
+    ctx.quadraticCurveTo(-12, -18, -4, -24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(216, 255, 255, 0.9)";
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(18, 58, 118, 0.78)";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(1, -17);
+    ctx.quadraticCurveTo(9, -8, 3, 12);
+    ctx.stroke();
+    ctx.restore();
   } else if (type === "multi") {
     ctx.fillStyle = "rgba(116, 215, 255, 0.95)";
     [-13, 0, 13].forEach((x) => {

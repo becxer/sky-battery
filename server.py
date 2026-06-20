@@ -84,8 +84,8 @@ CHEESE_SPLIT_INTERVAL = 0.38
 CHEESE_SPLIT_ANGLE = math.radians(10)
 CHEESE_MAX_SPLIT_LEVEL = 3
 CHEESE_SPLIT_SPEED = 0.96
-CHEESE_SCALE_PER_STACK = 0.12
-CHEESE_MAX_SCALE = 1.72
+CHEESE_SCALE_PER_STACK = 0.18
+CHEESE_MAX_SCALE = 2.1
 SUPERBALL_SPLIT_INTERVAL = 0.34
 SUPERBALL_SPLIT_ANGLE = math.radians(8)
 SUPERBALL_SPLIT_SPEED = 0.98
@@ -108,7 +108,7 @@ HEART_MAX_SCALE = 1.85
 HEART_HUGE_CHANCE = 0.08
 HEART_HUGE_MIN_SCALE = 2.8
 HEART_HUGE_MAX_SCALE = 3.6
-SHIELD_RECHARGE_TURNS = 3
+SHIELD_RECHARGE_TURNS = 2
 TANK_TYPES = {
     "normal": {"label": "Normal", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0]},
     "shield": {"label": "Shield", "damage": 0.8, "radius": 1.0, "shots": [0], "barrels": [0]},
@@ -567,7 +567,7 @@ def shield_blocks_attack(player):
         return False
     player["shieldActive"] = False
     # The current shot resolves by advancing the turn immediately, so start one
-    # higher to show three full turns of recharge time to players.
+    # higher to show two full turns of recharge time to players.
     player["shieldCooldown"] = SHIELD_RECHARGE_TURNS + 1
     state["effects"].append({
         "type": "shield-break",
@@ -1440,7 +1440,7 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
         extra_hit_radius = max(0, tank_hit_radius(player) - TANK_CONTACT_RADIUS)
         effective_distance = max(0, distance - extra_hit_radius)
         if effective_distance < damage_radius:
-            falloff = 1 - effective_distance / damage_radius
+            falloff = 1 - min(distance, damage_radius) / damage_radius
             if effect == "heal" and index == owner:
                 missing = max(0, 100 - player["health"])
                 heal_amount = round(missing * HEAL_SELF_RATIO)

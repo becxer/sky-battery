@@ -177,7 +177,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Tank | Role |
 | --- | --- |
 | Normal Tank | Standard single-shot tank with balanced damage and blast size. |
-| Shield Tank | Deals 80% normal damage, blocks one incoming attack, then recharges after three turns. |
+| Shield Tank | Deals 80% normal damage, blocks one incoming attack, then recharges after two turns. |
 | Triple Missile | Fires three shells at slight angle offsets for wider coverage. |
 | Red Core | Fires a small red round with very high direct damage and a tight blast. |
 | Seeker | Fires a small green missile that locks onto nearby targets while falling. |
@@ -188,7 +188,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Poop Tank | Adds poop stacks that reduce movement and increase later poop damage. |
 | Nuke Tank | Marks a target point first; hitting the same point again triggers a huge blast. |
 | Cruise Missile | Launches a slow missile; Fire or Space applies lift during flight. |
-| Cheese Tank | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow larger, and become easier to hit. |
+| Cheese Tank | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow visibly larger, and become easier to hit. |
 | Zombie Tank | Throws a stone that releases a zombie near impact; zombies can be shot down, and retire after dealing about one normal shell of total damage. |
 | Healing Tank | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
 | Heart Tank | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
