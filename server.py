@@ -1440,7 +1440,7 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
         extra_hit_radius = max(0, tank_hit_radius(player) - TANK_CONTACT_RADIUS)
         effective_distance = max(0, distance - extra_hit_radius)
         if effective_distance < damage_radius:
-            falloff = 1 - min(distance, damage_radius) / damage_radius
+            falloff = 1 - effective_distance / damage_radius
             if effect == "heal" and index == owner:
                 missing = max(0, 100 - player["health"])
                 heal_amount = round(missing * HEAL_SELF_RATIO)
