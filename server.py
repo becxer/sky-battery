@@ -97,10 +97,13 @@ ZOMBIE_SPEED = 62
 ZOMBIE_ATTACK_RANGE = 30
 ZOMBIE_ATTACK_INTERVAL = 0.42
 ZOMBIE_ATTACK_DAMAGE = 2
-ZOMBIE_RETIRE_DAMAGE = 45
+NORMAL_DIRECT_DAMAGE = 45
+ZOMBIE_RETIRE_DAMAGE = NORMAL_DIRECT_DAMAGE
 ZOMBIE_HIT_RADIUS = 17
 ZOMBIE_SPAWN_RADIUS = 62
 ZOMBIE_MAX_COUNT = 8
+ORCA_BITE_RADIUS = 110
+ORCA_BITE_DAMAGE = (NORMAL_DIRECT_DAMAGE * 7 + 5) // 10
 HEAL_SELF_RATIO = 0.2
 HEART_RESIZE_COOLDOWN = 0.0
 HEART_MIN_SCALE = 0.65
@@ -122,6 +125,7 @@ TANK_TYPES = {
     "poop": {"label": "Poop", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
     "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
     "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
+    "orca": {"label": "Orca", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "orca": True},
     "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True, "effect": "cheese"},
     "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
     "healing": {"label": "Healing", "damage": 0.8, "radius": 0.9, "shots": [0], "barrels": [0], "effect": "heal"},
@@ -160,6 +164,7 @@ TANK_TYPE_WEIGHTS = {
     "poop": 18,
     "nuke": 10,
     "cruise": 14,
+    "orca": 16,
     "cheese": 18,
     "zombie": 16,
     "healing": 18,
@@ -1219,6 +1224,7 @@ def fire_for(client_id):
             "cheeseMaxLevel": CHEESE_MAX_SPLIT_LEVEL if spec.get("cheese") else 0,
             "nextSplitAge": CHEESE_SPLIT_INTERVAL if spec.get("cheese") else None,
             "zombie": bool(spec.get("zombie")),
+            "orca": bool(spec.get("orca")),
             "heart": bool(spec.get("heart")),
             "heartScale": random_heart_scale() if spec.get("heart") else 1.0,
             "heartCooldown": 0,
@@ -1729,6 +1735,46 @@ def handle_zombie_impact(projectile, x, y, speed):
         sounds.append("damage")
 
 
+def handle_orca_landing(projectile, x, y):
+    owner = projectile.get("owner")
+    target_index = None
+    target_reach = None
+    for index, player in enumerate(state["players"]):
+        if index == owner or player["health"] <= 0:
+            continue
+        reach = max(0, math.hypot(player["x"] - x, player["y"] - y) - tank_hit_radius(player))
+        if reach <= ORCA_BITE_RADIUS and (target_reach is None or reach < target_reach):
+            target_index = index
+            target_reach = reach
+    if target_index is None:
+        return False
+
+    target = state["players"][target_index]
+    state["effects"].append({
+        "type": "orca-bite",
+        "x": target["x"],
+        "y": target["y"] - 18 * tank_size_multiplier(target),
+        "fromX": x,
+        "fromY": y,
+        "life": 26,
+        "maxLife": 26,
+    })
+    sounds.append("orca")
+    if shield_blocks_attack(target):
+        return True
+
+    target["health"] -= ORCA_BITE_DAMAGE
+    direction = -1 if target["x"] < x else 1
+    target["vx"] += direction * 8
+    target["vy"] -= 7
+    target["av"] += direction * 0.12
+    sounds.append("damage")
+    if target["health"] <= 0:
+        target["health"] = 0
+        sounds.append("retire")
+    return True
+
+
 def update_zombies(dt):
     zombies = state.get("zombies", [])
     if not zombies:
@@ -1953,6 +1999,8 @@ def projectile_player_direct_hit(projectile, speed):
     for index, player in enumerate(state["players"]):
         if player["health"] <= 0:
             continue
+        if projectile.get("orca") and index == projectile.get("owner"):
+            continue
         contact_radius = tank_hit_radius(player)
         if projectile.get("zombie") and index != projectile.get("owner"):
             contact_radius = max(contact_radius, ZOMBIE_SPAWN_RADIUS)
@@ -1967,6 +2015,9 @@ def projectile_player_direct_hit(projectile, speed):
             return True
         if projectile.get("zombie"):
             handle_zombie_impact(projectile, projectile["x"], projectile["y"], speed + 18)
+            return True
+        if projectile.get("orca"):
+            handle_orca_landing(projectile, projectile["x"], projectile["y"])
             return True
         damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(projectile)
         explode(
@@ -2034,7 +2085,9 @@ def update_projectiles(dt):
             if 0 <= zombie_index < len(state.get("zombies", [])):
                 state["zombies"].pop(zombie_index)
             sounds.append("zombiedie")
-            if p.get("tankType") == "nuke":
+            if p.get("orca"):
+                sounds.append("orca")
+            elif p.get("tankType") == "nuke":
                 handle_nuke_impact(p, zombie_x, zombie_y, impact_speed)
             else:
                 damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
@@ -2069,6 +2122,10 @@ def update_projectiles(dt):
                 continue
             if p.get("zombie"):
                 handle_zombie_impact(p, hit_x, hit_y, speed)
+                exploded = True
+                continue
+            if p.get("orca"):
+                handle_orca_landing(p, hit_x, hit_y)
                 exploded = True
                 continue
             if p.get("bouncy") and p.get("bounces", 0) < p.get("maxBounces", 0):
