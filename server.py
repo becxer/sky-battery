@@ -21,6 +21,7 @@ TANK_FIRE_DISTANCE = 19
 TANK_MUZZLE_Y = 8
 TANK_CONTACT_RADIUS = 12
 BOING_CONTACT_RADIUS = 22
+BOING_MIN_DIRECT_DAMAGE = 10
 BOING_MAX_DIRECT_DAMAGE = 90
 TANK_BOTTOM_OFFSET = TANK_GROUND_OFFSET
 TANK_SLOPE_SAMPLE = 18
@@ -664,7 +665,7 @@ def boing_direct_damage(projectile):
     start_y = projectile.get("launchY", projectile.get("y", 0))
     distance = math.hypot(projectile.get("x", start_x) - start_x, projectile.get("y", start_y) - start_y)
     ratio = clamp(distance / (W * 0.5), 0, 1)
-    return round(NORMAL_DIRECT_DAMAGE + (BOING_MAX_DIRECT_DAMAGE - NORMAL_DIRECT_DAMAGE) * ratio)
+    return round(BOING_MIN_DIRECT_DAMAGE + (BOING_MAX_DIRECT_DAMAGE - BOING_MIN_DIRECT_DAMAGE) * ratio)
 
 
 def sync_projectile_field():
