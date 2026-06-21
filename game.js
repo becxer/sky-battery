@@ -53,7 +53,7 @@ const TANK_TYPE_META = {
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
-  orca: { label: "O", name: "범고래탱크", desc: "유리 어항 속 범고래가 착지 후 가까운 탱크를 물고 사라집니다.", color: "#101820", shell: "#101820", glow: "#9deaff" },
+  orca: { label: "O", name: "범고래탱크", desc: "유리 어항 속 범고래가 착지 후 땅을 헤엄쳐 가까운 탱크를 물고 사라집니다.", color: "#101820", shell: "#101820", glow: "#9deaff" },
   cheese: { label: "CH", name: "치즈 탱크", desc: "맞은 탱크를 먹여서 키우고 피격 판정을 넓힙니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
   zombie: { label: "Z", name: "좀비 탱크", desc: "맞은 근처에 좀비를 풀어 목표를 따라다니게 합니다.", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
   healing: { label: "H", name: "힐링탱크", desc: "자신에게 맞추면 잃은 체력의 일부를 반짝 회복합니다.", color: "#8fffe8", shell: "#9dfff1", glow: "#fff7a8" },
@@ -2370,6 +2370,7 @@ function drawFallbackProjectile(meta) {
 function drawOneProjectile(p) {
   const meta = TANK_TYPE_META[p.tankType || "normal"] || TANK_TYPE_META.normal;
   const flightAngle = Math.atan2(p.vy || 0, p.vx || 1);
+  const orcaPitch = Math.atan2(p.vy || 0, Math.max(1, Math.abs(p.vx || 1)));
   const visualScale = p.tankType === "cruise"
     ? cruiseProjectileScale(p)
     : p.tankType === "heart" ? clamp(p.heartScale || 1, 0.55, 3.6)
@@ -2388,9 +2389,62 @@ function drawOneProjectile(p) {
 
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.rotate(flightAngle);
+  if (p.tankType === "orca") {
+    const dir = (p.vx || 0) < 0 ? -1 : 1;
+    ctx.rotate(dir === 1 ? orcaPitch : -orcaPitch);
+    ctx.scale(dir, 1);
+  } else {
+    ctx.rotate(flightAngle);
+  }
   if (!drawProjectileAsset(p, meta, flightAngle)) drawFallbackProjectile(meta);
   ctx.restore();
+}
+
+function drawOrcas() {
+  (latest?.orcas || []).forEach((orca) => {
+    const age = orca.age || 0;
+    const dir = orca.dir === -1 ? -1 : 1;
+    const swim = Math.sin(age * 18);
+    ctx.save();
+    ctx.translate(orca.x, orca.y + swim * 1.2);
+    ctx.scale(dir, 1);
+    ctx.fillStyle = "rgba(5, 10, 14, 0.26)";
+    ctx.beginPath();
+    ctx.ellipse(0, 7, 28, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(157, 234, 255, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-28, 4);
+    ctx.quadraticCurveTo(-6, -3 + swim * 1.6, 26, 1);
+    ctx.stroke();
+    const body = ctx.createLinearGradient(-20, -11, 24, 6);
+    body.addColorStop(0, "#05080b");
+    body.addColorStop(0.62, "#101820");
+    body.addColorStop(1, "#2d3a43");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.ellipse(0, -4, 24, 10, -0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f5fbff";
+    ctx.beginPath();
+    ctx.ellipse(5, -1, 13, 4.3, -0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#101820";
+    ctx.beginPath();
+    ctx.moveTo(-19, -4);
+    ctx.lineTo(-34, -11 - swim * 3);
+    ctx.lineTo(-30, 3 + swim * 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.lineTo(9, -25);
+    ctx.lineTo(12, -11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
 }
 
 function drawZombies() {
@@ -2762,6 +2816,7 @@ function render() {
     drawNukeMarks();
     drawHealthBars();
     drawZombies();
+    drawOrcas();
     latest.players.forEach(drawTank);
     drawShieldStates();
     drawMoveBars();

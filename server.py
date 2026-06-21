@@ -102,8 +102,13 @@ ZOMBIE_RETIRE_DAMAGE = NORMAL_DIRECT_DAMAGE
 ZOMBIE_HIT_RADIUS = 17
 ZOMBIE_SPAWN_RADIUS = 62
 ZOMBIE_MAX_COUNT = 8
-ORCA_BITE_RADIUS = 110
 ORCA_BITE_DAMAGE = (NORMAL_DIRECT_DAMAGE * 7 + 5) // 10
+ORCA_SEEK_RADIUS = 260
+ORCA_ATTACH_RANGE = 18
+ORCA_MIN_SWIM_TIME = 0.12
+ORCA_SWIM_SPEED = 320
+ORCA_MAX_AGE = 2.2
+ORCA_MAX_COUNT = 4
 HEAL_SELF_RATIO = 0.2
 HEART_RESIZE_COOLDOWN = 0.0
 HEART_MIN_SCALE = 0.65
@@ -657,7 +662,7 @@ def sync_projectile_field():
 
 
 def active_projectiles():
-    return bool(state.get("projectiles") or state.get("projectile"))
+    return bool(state.get("projectiles") or state.get("projectile") or state.get("orcas"))
 
 
 def set_projectiles(projectiles):
@@ -936,6 +941,7 @@ state = {
     "particles": [],
     "effects": [],
     "zombies": [],
+    "orcas": [],
     "nukeMarks": [],
     "wind": 0,
     "skyMode": random_sky_mode(),
@@ -968,6 +974,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["particles"] = []
     state["effects"] = []
     state["zombies"] = []
+    state["orcas"] = []
     state["nukeMarks"] = []
     state["wind"] = round(random.uniform(-2.8, 2.8), 2)
     state["skyMode"] = random_sky_mode()
@@ -984,6 +991,7 @@ def recreate_world():
     state["particles"] = []
     state["effects"] = []
     state["zombies"] = []
+    state["orcas"] = []
     state["nukeMarks"] = []
     state["winner"] = None
     state["worldVersion"] += 1
@@ -1735,36 +1743,35 @@ def handle_zombie_impact(projectile, x, y, speed):
         sounds.append("damage")
 
 
-def handle_orca_landing(projectile, x, y):
-    owner = projectile.get("owner")
-    target_index = None
-    target_reach = None
+def closest_orca_target(owner, x, y, radius):
+    best_index = None
+    best_reach = None
     for index, player in enumerate(state["players"]):
         if index == owner or player["health"] <= 0:
             continue
         reach = max(0, math.hypot(player["x"] - x, player["y"] - y) - tank_hit_radius(player))
-        if reach <= ORCA_BITE_RADIUS and (target_reach is None or reach < target_reach):
-            target_index = index
-            target_reach = reach
-    if target_index is None:
-        return False
+        if reach <= radius and (best_reach is None or reach < best_reach):
+            best_index = index
+            best_reach = reach
+    return best_index
 
-    target = state["players"][target_index]
+
+def bite_orca_target(orca, target):
     state["effects"].append({
         "type": "orca-bite",
         "x": target["x"],
         "y": target["y"] - 18 * tank_size_multiplier(target),
-        "fromX": x,
-        "fromY": y,
+        "fromX": orca["x"],
+        "fromY": orca["y"],
         "life": 26,
         "maxLife": 26,
     })
     sounds.append("orca")
     if shield_blocks_attack(target):
-        return True
+        return
 
     target["health"] -= ORCA_BITE_DAMAGE
-    direction = -1 if target["x"] < x else 1
+    direction = -1 if target["x"] < orca["x"] else 1
     target["vx"] += direction * 8
     target["vy"] -= 7
     target["av"] += direction * 0.12
@@ -1772,7 +1779,62 @@ def handle_orca_landing(projectile, x, y):
     if target["health"] <= 0:
         target["health"] = 0
         sounds.append("retire")
+
+
+def handle_orca_landing(projectile, x, y):
+    owner = projectile.get("owner")
+    target_index = closest_orca_target(owner, x, y, ORCA_SEEK_RADIUS)
+    if target_index is None:
+        return False
+
+    floor = supported_floor_y(x, y - TANK_GROUND_OFFSET) - 5
+    target = state["players"][target_index]
+    state["orcas"] = (state.get("orcas", []) + [{
+        "x": clamp(x, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN),
+        "y": floor,
+        "target": target_index,
+        "owner": owner,
+        "dir": -1 if target["x"] < x else 1,
+        "age": 0,
+    }])[-ORCA_MAX_COUNT:]
+    sounds.append("orca")
     return True
+
+
+def update_orcas(dt):
+    orcas = state.get("orcas", [])
+    if not orcas:
+        return
+    next_orcas = []
+    for orca in orcas:
+        target_index = int(orca.get("target", -1))
+        if target_index < 0 or target_index >= len(state["players"]):
+            continue
+        target = state["players"][target_index]
+        if target["health"] <= 0:
+            continue
+
+        orca["age"] = orca.get("age", 0) + dt
+        if orca["age"] > ORCA_MAX_AGE:
+            continue
+
+        dx = target["x"] - orca["x"]
+        direction = -1 if dx < 0 else 1
+        orca["dir"] = direction
+        step = clamp(dx, -ORCA_SWIM_SPEED * dt, ORCA_SWIM_SPEED * dt)
+        orca["x"] = clamp(orca["x"] + step, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+        floor = supported_floor_y(orca["x"], orca.get("y") - TANK_GROUND_OFFSET) - 5
+        orca["y"] += (floor - orca["y"]) * 0.62
+
+        reach = max(0, math.hypot(target["x"] - orca["x"], target["y"] - orca["y"]) - tank_hit_radius(target))
+        if orca["age"] >= ORCA_MIN_SWIM_TIME and reach <= ORCA_ATTACH_RANGE:
+            bite_orca_target(orca, target)
+            continue
+        next_orcas.append(orca)
+
+    state["orcas"] = next_orcas[:ORCA_MAX_COUNT]
+    if not state["orcas"] and not state.get("projectiles") and state["winner"] is None:
+        resolve_shot_end()
 
 
 def update_zombies(dt):
@@ -2159,7 +2221,7 @@ def update_projectiles(dt):
 
     survivors = merge_superballs(survivors)
     set_projectiles(survivors)
-    if not survivors and state["winner"] is None:
+    if not survivors and state["winner"] is None and not state.get("orcas"):
         resolve_shot_end()
 
 
@@ -2207,6 +2269,7 @@ def snapshot():
         "particles": state["particles"],
         "effects": state.get("effects", []),
         "zombies": state.get("zombies", []),
+        "orcas": state.get("orcas", []),
         "nukeMarks": state.get("nukeMarks", []),
         "wind": state["wind"],
         "skyMode": state["skyMode"],
@@ -2239,6 +2302,7 @@ def game_loop():
                 update_dummy_respawns(1 / 60)
                 update_zombies(1 / 60)
                 update_projectiles(1 / 60)
+                update_orcas(1 / 60)
             update_particles()
             update_effects()
             now = time.time()
