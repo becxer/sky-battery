@@ -60,7 +60,7 @@ const TANK_TYPE_META = {
   heart: { label: "♥", name: "하트탱크", desc: "비행 중 Fire/Space를 누를 때마다 크기가 바뀌고 가끔 왕하트가 나옵니다.", color: "#ff85c8", shell: "#ff5ebd", glow: "#ffd6ef" },
   butt: { label: "B", name: "뿌직탱크", desc: "비행 중 Fire/Space를 누르면 그 자리에서 똥을 떨어뜨립니다.", color: "#f0b28f", shell: "#f2b090", glow: "#ffe0c9" },
   poopdrop: { label: "P", name: "똥", desc: "떨어지는 똥 포탄.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
-  boing: { label: "BO", name: "또잉탱크", desc: "지형에 맞으면 그 지점으로 또잉 점프 이동합니다.", color: "#b68cff", shell: "#b68cff", glow: "#f0dcff" },
+  boing: { label: "BO", name: "또잉탱크", desc: "지형에 맞으면 점프 이동하고, 먼 탱크를 맞출수록 강해집니다.", color: "#b68cff", shell: "#b68cff", glow: "#f0dcff" },
   superball: { label: "B", name: "볼탱크", desc: "흰 공 5발이 20발까지 갈라진 뒤 합쳐져 커집니다.", color: "#ffffff", shell: "#ffffff", glow: "#eaf7ff" },
   super: { label: "S", name: "슈퍼탱크", desc: "드물게 등장하는 다섯 발짜리 무지개 유도 미사일.", color: "#ffe23f", shell: "#39ff14", glow: "#fff1a8" },
 };

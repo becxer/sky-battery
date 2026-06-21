@@ -21,6 +21,7 @@ TANK_FIRE_DISTANCE = 19
 TANK_MUZZLE_Y = 8
 TANK_CONTACT_RADIUS = 12
 BOING_CONTACT_RADIUS = 22
+BOING_MAX_DIRECT_DAMAGE = 90
 TANK_BOTTOM_OFFSET = TANK_GROUND_OFFSET
 TANK_SLOPE_SAMPLE = 18
 TANK_MAX_BODY_ANGLE = math.radians(28)
@@ -641,6 +642,8 @@ def projectile_effect_multipliers(projectile):
     damage = projectile.get("damageMultiplier", 1.0)
     radius = projectile.get("radiusMultiplier", 1.0)
     base_damage = projectile.get("baseDamage")
+    if projectile.get("boing"):
+        base_damage = boing_direct_damage(projectile)
     if projectile.get("heart"):
         heart_scale = clamp(projectile.get("heartScale", 1.0), HEART_MIN_SCALE, HEART_HUGE_MAX_SCALE)
         damage *= heart_scale
@@ -654,6 +657,14 @@ def projectile_effect_multipliers(projectile):
         damage *= artillery_damage_multiplier_for_age(age)
         radius *= artillery_radius_multiplier_for_age(age)
     return damage, radius, base_damage
+
+
+def boing_direct_damage(projectile):
+    start_x = projectile.get("launchX", projectile.get("x", 0))
+    start_y = projectile.get("launchY", projectile.get("y", 0))
+    distance = math.hypot(projectile.get("x", start_x) - start_x, projectile.get("y", start_y) - start_y)
+    ratio = clamp(distance / (W * 0.5), 0, 1)
+    return round(NORMAL_DIRECT_DAMAGE + (BOING_MAX_DIRECT_DAMAGE - NORMAL_DIRECT_DAMAGE) * ratio)
 
 
 def sync_projectile_field():
@@ -1213,6 +1224,8 @@ def fire_for(client_id):
             "av": player["dir"] * 0.24,
             "age": 0,
             "owner": state["current"],
+            "launchX": player["x"],
+            "launchY": player["y"],
             "tankType": player.get("tankType", "normal"),
             "shotIndex": shot_index,
             "shotColor": shot_colors[shot_index % len(shot_colors)] if shot_colors else None,
