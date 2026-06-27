@@ -45,6 +45,17 @@ PROJECTILE_GRAVITY = 1600
 PROJECTILE_POWER_SCALE = 12.5
 WIND_FORCE = 42
 CHAIN_BOUNCE_AIM_BLEND = 0.35
+PLANE_GRAVITY = 130
+PLANE_MIN_SPEED = 360
+PLANE_VERTICAL_DAMPING = 0.988
+PLANE_MISSILE_COUNT = 3
+PLANE_MISSILE_ANGLE = math.radians(15)
+PLANE_MISSILE_SPACING = 18
+PLANE_MISSILE_SPEED = 620
+PLANE_MISSILE_DAMAGE = 24
+PLANE_MISSILE_RADIUS = 0.66
+PLANE_CRASH_DAMAGE = 36
+PLANE_CRASH_RADIUS = 0.9
 GROUND_MIN_Y = 225
 GROUND_CONTROL_CLEARANCE = 150
 GROUND_MAX_Y = H - GROUND_CONTROL_CLEARANCE
@@ -132,6 +143,7 @@ TANK_TYPES = {
     "poop": {"label": "Poop", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
     "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
     "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
+    "plane": {"label": "Plane", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "plane": True},
     "orca": {"label": "Orca", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "orca": True},
     "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True, "effect": "cheese"},
     "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
@@ -171,6 +183,7 @@ TANK_TYPE_WEIGHTS = {
     "poop": 18,
     "nuke": 10,
     "cruise": 14,
+    "plane": 16,
     "orca": 16,
     "cheese": 18,
     "zombie": 16,
@@ -1238,6 +1251,8 @@ def fire_for(client_id):
             "cruise": bool(spec.get("cruise")),
             "maxAge": spec.get("maxAge", CRUISE_MAX_AGE if spec.get("cruise") else None),
             "boostTime": 0,
+            "plane": bool(spec.get("plane")),
+            "planeDropped": False,
             "bouncy": bool(spec.get("bouncy")),
             "bounces": 0,
             "maxBounces": spec.get("maxBounces", 0),
@@ -1263,7 +1278,7 @@ def fire_for(client_id):
             "locked": False,
         })
     set_projectiles(projectiles)
-    sounds.append("superball" if spec.get("superball") else "cruise" if spec.get("cruise") else "fire")
+    sounds.append("superball" if spec.get("superball") else "plane" if spec.get("plane") else "cruise" if spec.get("cruise") else "fire")
 
 
 def move_for(client_id, direction):
@@ -1293,6 +1308,51 @@ def steer_for(client_id, direction):
     return
 
 
+def update_plane_projectile(p, dt):
+    direction = -1 if p.get("vx", 0) < 0 else 1
+    speed = max(PLANE_MIN_SPEED, abs(p.get("vx", 0)) * 0.996)
+    p["vx"] = direction * speed + state["wind"] * WIND_FORCE * 0.04 * dt
+    p["vy"] = clamp(p.get("vy", 0) * PLANE_VERTICAL_DAMPING + PLANE_GRAVITY * dt, -260, 260)
+    p["angle"] = math.atan2(p["vy"], max(1, abs(p["vx"]))) * direction
+
+
+def drop_plane_missiles(projectile):
+    if projectile.get("planeDropped"):
+        return
+    projectile["planeDropped"] = True
+    direction = -1 if projectile.get("vx", 0) < 0 else 1
+    heading = 0 if direction == 1 else math.pi
+    base_angle = heading + PLANE_MISSILE_ANGLE * direction
+    missiles = []
+    for index in range(PLANE_MISSILE_COUNT):
+        offset = index - (PLANE_MISSILE_COUNT - 1) / 2
+        angle = base_angle + math.radians(offset * 2.5) * direction
+        x = projectile["x"] + direction * offset * PLANE_MISSILE_SPACING
+        y = projectile["y"] + 9 + abs(offset) * 2
+        missiles.append({
+            "x": x,
+            "y": y,
+            "vx": math.cos(angle) * PLANE_MISSILE_SPEED + projectile.get("vx", 0) * 0.14,
+            "vy": math.sin(angle) * PLANE_MISSILE_SPEED + max(0, projectile.get("vy", 0)) * 0.08,
+            "angle": angle,
+            "av": direction * (0.16 + abs(offset) * 0.04),
+            "age": 0,
+            "owner": projectile.get("owner"),
+            "launchX": projectile.get("launchX", projectile["x"]),
+            "launchY": projectile.get("launchY", projectile["y"]),
+            "tankType": "planeMissile",
+            "damageMultiplier": 1.0,
+            "baseDamage": PLANE_MISSILE_DAMAGE,
+            "radiusMultiplier": PLANE_MISSILE_RADIUS,
+            "planeMissile": True,
+            "effect": None,
+            "locked": False,
+        })
+    state["projectiles"] = state.get("projectiles", []) + missiles
+    sync_projectile_field()
+    sounds.append("plane")
+
+
 def boost_for(client_id):
     client = clients.get(client_id)
     if state["phase"] != "playing" or not client:
@@ -1305,6 +1365,8 @@ def boost_for(client_id):
             continue
         if projectile.get("cruise"):
             projectile["boostTime"] = CRUISE_BOOST_TIME
+        elif projectile.get("plane"):
+            drop_plane_missiles(projectile)
         elif projectile.get("heart"):
             projectile["heartScale"] = random_heart_scale()
             projectile["heartCooldown"] = HEART_RESIZE_COOLDOWN
@@ -1815,6 +1877,21 @@ def handle_orca_landing(projectile, x, y):
     return True
 
 
+def handle_plane_crash(projectile, x, y, speed):
+    sounds.append("plane")
+    explode(
+        x,
+        y,
+        speed,
+        1.0,
+        PLANE_CRASH_RADIUS,
+        PLANE_CRASH_DAMAGE,
+        None,
+        projectile.get("owner"),
+        advance_turn=False,
+    )
+
+
 def update_orcas(dt):
     orcas = state.get("orcas", [])
     if not orcas:
@@ -2095,6 +2172,9 @@ def projectile_player_direct_hit(projectile, speed):
         if projectile.get("orca"):
             handle_orca_landing(projectile, projectile["x"], projectile["y"])
             return True
+        if projectile.get("plane"):
+            handle_plane_crash(projectile, projectile["x"], projectile["y"], speed + 18)
+            return True
         damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(projectile)
         explode(
             projectile["x"],
@@ -2124,7 +2204,9 @@ def update_projectiles(dt):
             p["heartCooldown"] = max(0, p.get("heartCooldown", 0) - dt)
         previous_x = p["x"]
         previous_y = p["y"]
-        if p.get("cruise"):
+        if p.get("plane"):
+            update_plane_projectile(p, dt)
+        elif p.get("cruise"):
             update_cruise_projectile(p, dt)
         else:
             steer_homing_projectile(p, dt)
@@ -2163,6 +2245,8 @@ def update_projectiles(dt):
             sounds.append("zombiedie")
             if p.get("orca"):
                 sounds.append("orca")
+            elif p.get("plane"):
+                handle_plane_crash(p, zombie_x, zombie_y, impact_speed)
             elif p.get("tankType") == "nuke":
                 handle_nuke_impact(p, zombie_x, zombie_y, impact_speed)
             else:
@@ -2190,6 +2274,10 @@ def update_projectiles(dt):
             hit_x, hit_y = hit
             if p.get("boing"):
                 handle_boing_terrain_impact(p, hit_x, hit_y)
+                exploded = True
+                continue
+            if p.get("plane"):
+                handle_plane_crash(p, hit_x, hit_y, speed)
                 exploded = True
                 continue
             if p.get("tankType") == "nuke":

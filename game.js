@@ -53,6 +53,8 @@ const TANK_TYPE_META = {
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
+  plane: { label: "PL", name: "비행기탱크", desc: "비행 중 Fire/Space로 15도 아래 미사일 3발을 떨굽니다.", color: "#8fd0ff", shell: "#d7f3ff", glow: "#ffffff" },
+  planeMissile: { label: "PM", name: "비행기 미사일", desc: "비행기에서 떨어지는 3연발 미사일.", color: "#d7f3ff", shell: "#f4fbff", glow: "#ffcd6f" },
   orca: { label: "O", name: "범고래탱크", desc: "유리 어항 속 범고래가 착지 후 땅을 헤엄쳐 가까운 탱크를 물고 사라집니다.", color: "#101820", shell: "#101820", glow: "#9deaff" },
   cheese: { label: "CH", name: "치즈 탱크", desc: "맞은 탱크를 먹여서 키우고 피격 판정을 넓힙니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
   zombie: { label: "Z", name: "좀비 탱크", desc: "맞은 근처에 좀비를 풀어 목표를 따라다니게 합니다.", color: "#6fe36f", shell: "#5d6158", glow: "#b5ff8a" },
@@ -250,6 +252,10 @@ function playSound(name) {
   } else if (name === "cruise") {
     tone(180, 0.22, "sawtooth", 0.065, 120);
     setTimeout(() => tone(260, 0.18, "triangle", 0.04, 190), 80);
+  } else if (name === "plane") {
+    tone(320, 0.12, "sawtooth", 0.055, 520);
+    setTimeout(() => tone(640, 0.08, "triangle", 0.04, 820), 70);
+    setTimeout(() => tone(180, 0.16, "sine", 0.035, 120), 135);
   } else if (name === "cheese") {
     tone(720, 0.06, "triangle", 0.045, 980);
     setTimeout(() => tone(920, 0.05, "sine", 0.035, 1220), 55);
@@ -401,6 +407,7 @@ function activeSpecialProjectile() {
   return currentProjectiles().find((projectile) => {
     if (projectile.owner !== seat) return false;
     if (projectile.cruise || projectile.heart) return true;
+    if (projectile.plane && !projectile.planeDropped) return true;
     return projectile.butt && !projectile.buttDropped;
   });
 }
@@ -408,6 +415,7 @@ function activeSpecialProjectile() {
 function specialProjectileButtonText(projectile) {
   if (!projectile) return "Fire";
   if (projectile.cruise) return "Lift";
+  if (projectile.plane && !projectile.planeDropped) return "Missiles";
   if (projectile.heart) return "Resize";
   if (projectile.butt && !projectile.buttDropped) return "Drop";
   return "Fire";
@@ -1511,6 +1519,40 @@ function drawTankTypeTrim(player) {
     ctx.moveTo(-24, -16);
     ctx.lineTo(24, -16);
     ctx.stroke();
+  } else if (type === "plane") {
+    const body = ctx.createLinearGradient(-28, -31, 30, -9);
+    body.addColorStop(0, "#345f86");
+    body.addColorStop(0.48, "#8fd0ff");
+    body.addColorStop(1, "#f4fbff");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(32, -21);
+    ctx.lineTo(10, -31);
+    ctx.lineTo(-30, -27);
+    ctx.lineTo(-14, -21);
+    ctx.lineTo(-30, -15);
+    ctx.lineTo(10, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(215, 243, 255, 0.9)";
+    ctx.beginPath();
+    ctx.moveTo(-5, -23);
+    ctx.lineTo(-25, -43);
+    ctx.lineTo(8, -27);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-5, -19);
+    ctx.lineTo(-24, -5);
+    ctx.lineTo(8, -15);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.62)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-18, -27);
+    ctx.lineTo(18, -25);
+    ctx.stroke();
   } else if (type === "orca") {
     const glass = ctx.createLinearGradient(-32, -34, 34, 8);
     glass.addColorStop(0, "rgba(218, 250, 255, 0.9)");
@@ -1764,6 +1806,8 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 34, thickness: 5, tip: 5, accent: "#39ff14", fins: true });
   } else if (type === "cruise") {
     drawBarrel(player, undefined, 0, { length: 43, thickness: 6, tip: 5, accent: "#72a7ff", fins: true });
+  } else if (type === "plane") {
+    drawBarrel(player, undefined, 0, { length: 36, thickness: 7, tip: 6, accent: "#8fd0ff", fins: true });
   } else if (type === "orca") {
     drawBarrel(player, undefined, 0, { length: 31, thickness: 8, tip: 6, accent: "#69cce8" });
   } else if (type === "super") {
@@ -1875,6 +1919,8 @@ function projectileTrailColor(p) {
   if (p.tankType === "red") return "rgba(255, 48, 48, 0.86)";
   if (p.tankType === "missile" || p.tankType === "super") return hexToRgba(seekerProjectileColor(p), 0.92);
   if (p.tankType === "cruise") return "rgba(114, 167, 255, 0.9)";
+  if (p.tankType === "plane") return "rgba(215, 243, 255, 0.72)";
+  if (p.tankType === "planeMissile") return "rgba(255, 205, 111, 0.88)";
   if (p.tankType === "artillery") return hexToRgba(artilleryProjectileColor(p), 0.82);
   if (p.tankType === "chain") return "rgba(220, 230, 240, 0.86)";
   if (p.tankType === "poop") return "rgba(132, 82, 38, 0.84)";
@@ -2305,6 +2351,76 @@ function drawCruiseProjectile(p) {
   return true;
 }
 
+function drawPlaneProjectile(p) {
+  const dropped = Boolean(p.planeDropped);
+  const flap = Math.sin((p.age || 0) * 18) * 1.5;
+  const body = ctx.createLinearGradient(-22, -7, 28, 7);
+  body.addColorStop(0, "#2f5a7d");
+  body.addColorStop(0.48, "#8fd0ff");
+  body.addColorStop(1, "#f4fbff");
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.moveTo(30, 0);
+  ctx.lineTo(12, -8);
+  ctx.lineTo(-24, -6);
+  ctx.lineTo(-13, 0);
+  ctx.lineTo(-24, 6);
+  ctx.lineTo(12, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = dropped ? "rgba(215, 243, 255, 0.58)" : "rgba(215, 243, 255, 0.92)";
+  ctx.beginPath();
+  ctx.moveTo(-2, -3);
+  ctx.lineTo(-23, -22 + flap);
+  ctx.lineTo(9, -7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-2, 3);
+  ctx.lineTo(-21, 19 - flap);
+  ctx.lineTo(9, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#345f86";
+  ctx.beginPath();
+  ctx.moveTo(-19, -5);
+  ctx.lineTo(-32, -15);
+  ctx.lineTo(-27, 0);
+  ctx.lineTo(-32, 15);
+  ctx.lineTo(-19, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-14, -5);
+  ctx.lineTo(18, -3);
+  ctx.stroke();
+  return true;
+}
+
+function drawPlaneMissileProjectile() {
+  const shell = ctx.createLinearGradient(-12, -4, 13, 4);
+  shell.addColorStop(0, "#39434c");
+  shell.addColorStop(0.55, "#f4fbff");
+  shell.addColorStop(1, "#ffcd6f");
+  ctx.fillStyle = shell;
+  ctx.beginPath();
+  ctx.moveTo(14, 0);
+  ctx.lineTo(7, -4);
+  ctx.lineTo(-10, -4);
+  ctx.lineTo(-14, 0);
+  ctx.lineTo(-10, 4);
+  ctx.lineTo(7, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#ff8f2f";
+  ctx.beginPath();
+  ctx.ellipse(-15, 0, 5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  return true;
+}
+
 function drawProjectileAsset(p, meta, flightAngle) {
   const type = p.tankType || "normal";
   if (type === "red") {
@@ -2349,6 +2465,12 @@ function drawProjectileAsset(p, meta, flightAngle) {
   if (type === "superball") {
     return drawSuperballProjectile(p);
   }
+  if (type === "plane") {
+    return drawPlaneProjectile(p);
+  }
+  if (type === "planeMissile") {
+    return drawPlaneMissileProjectile();
+  }
   if (type === "cruise") {
     return drawCruiseProjectile(p);
   }
@@ -2370,7 +2492,7 @@ function drawFallbackProjectile(meta) {
 function drawOneProjectile(p) {
   const meta = TANK_TYPE_META[p.tankType || "normal"] || TANK_TYPE_META.normal;
   const flightAngle = Math.atan2(p.vy || 0, p.vx || 1);
-  const orcaPitch = Math.atan2(p.vy || 0, Math.max(1, Math.abs(p.vx || 1)));
+  const uprightPitch = Math.atan2(p.vy || 0, Math.max(1, Math.abs(p.vx || 1)));
   const visualScale = p.tankType === "cruise"
     ? cruiseProjectileScale(p)
     : p.tankType === "heart" ? clamp(p.heartScale || 1, 0.55, 3.6)
@@ -2381,7 +2503,7 @@ function drawOneProjectile(p) {
   trail.addColorStop(0, "rgba(255, 215, 120, 0)");
   trail.addColorStop(1, projectileTrailColor(p));
   ctx.strokeStyle = trail;
-  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise" || p.tankType === "heart" || p.tankType === "superball" || p.tankType === "orca") ? Math.max(1, 2 * visualScale) : 3;
+  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise" || p.tankType === "heart" || p.tankType === "superball" || p.tankType === "orca" || p.tankType === "plane" || p.tankType === "planeMissile") ? Math.max(1, 2 * visualScale) : 3;
   ctx.beginPath();
   ctx.moveTo(tailX, tailY);
   ctx.lineTo(p.x, p.y);
@@ -2389,9 +2511,9 @@ function drawOneProjectile(p) {
 
   ctx.save();
   ctx.translate(p.x, p.y);
-  if (p.tankType === "orca") {
+  if (p.tankType === "orca" || p.tankType === "plane") {
     const dir = (p.vx || 0) < 0 ? -1 : 1;
-    ctx.rotate(dir === 1 ? orcaPitch : -orcaPitch);
+    ctx.rotate(dir === 1 ? uprightPitch : -uprightPitch);
     ctx.scale(dir, 1);
   } else {
     ctx.rotate(flightAngle);
