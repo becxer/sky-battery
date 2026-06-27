@@ -45,9 +45,8 @@ PROJECTILE_GRAVITY = 1600
 PROJECTILE_POWER_SCALE = 12.5
 WIND_FORCE = 42
 CHAIN_BOUNCE_AIM_BLEND = 0.35
-PLANE_GRAVITY = 130
-PLANE_MIN_SPEED = 360
-PLANE_VERTICAL_DAMPING = 0.988
+PLANE_MIN_SPEED = 900
+PLANE_SPEED_DRAG = 1.0
 PLANE_MISSILE_COUNT = 3
 PLANE_MISSILE_ANGLE = math.radians(15)
 PLANE_MISSILE_SPACING = 18
@@ -1309,11 +1308,11 @@ def steer_for(client_id, direction):
 
 
 def update_plane_projectile(p, dt):
-    direction = -1 if p.get("vx", 0) < 0 else 1
-    speed = max(PLANE_MIN_SPEED, abs(p.get("vx", 0)) * 0.996)
-    p["vx"] = direction * speed + state["wind"] * WIND_FORCE * 0.04 * dt
-    p["vy"] = clamp(p.get("vy", 0) * PLANE_VERTICAL_DAMPING + PLANE_GRAVITY * dt, -260, 260)
-    p["angle"] = math.atan2(p["vy"], max(1, abs(p["vx"]))) * direction
+    current_angle = math.atan2(p.get("vy", 0), p.get("vx", 1))
+    speed = max(PLANE_MIN_SPEED, math.hypot(p.get("vx", 0), p.get("vy", 0)) * PLANE_SPEED_DRAG)
+    p["vx"] = math.cos(current_angle) * speed
+    p["vy"] = math.sin(current_angle) * speed
+    p["angle"] = current_angle
 
 
 def drop_plane_missiles(projectile):

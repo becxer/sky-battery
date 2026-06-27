@@ -189,7 +189,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Poop Tank / 똥탱크 | Adds poop stacks that reduce movement and increase later poop damage. |
 | Nuke Tank / 핵폭탄 탱크 | Marks a target point first; hitting the same point again triggers a huge blast. |
 | Cruise Missile / 순항미사일 탱크 | Launches a slow missile; Fire or Space applies lift during flight. |
-| Plane Tank / 비행기탱크 | Launches a plane; pressing Fire or Space once drops three 15-degree missiles while the plane keeps flying and can crash-explode. |
+| Plane Tank / 비행기탱크 | Launches a small, fast, straight-flying plane; pressing Fire or Space once drops three 15-degree missiles while the plane can keep flying or crash-explode. |
 | Orca Tank / 범고래탱크 | Fires a tail-flapping orca from a glass tank; after landing near a target, it swims along the ground, bites once for about 70% normal damage, and leaves no crater. |
 | Cheese Tank / 치즈 탱크 | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow visibly larger, and become easier to hit. |
 | Zombie Tank / 좀비 탱크 | Throws a stone that releases a zombie near impact; zombies can be shot down, and retire after dealing about one normal shell of total damage. |

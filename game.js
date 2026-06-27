@@ -53,7 +53,7 @@ const TANK_TYPE_META = {
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
-  plane: { label: "PL", name: "비행기탱크", desc: "비행 중 Fire/Space로 15도 아래 미사일 3발을 떨굽니다.", color: "#8fd0ff", shell: "#d7f3ff", glow: "#ffffff" },
+  plane: { label: "PL", name: "비행기탱크", desc: "작고 빠르게 직선 비행하며 Fire/Space로 미사일 3발을 떨굽니다.", color: "#8fd0ff", shell: "#d7f3ff", glow: "#ffffff" },
   planeMissile: { label: "PM", name: "비행기 미사일", desc: "비행기에서 떨어지는 3연발 미사일.", color: "#d7f3ff", shell: "#f4fbff", glow: "#ffcd6f" },
   orca: { label: "O", name: "범고래탱크", desc: "유리 어항 속 범고래가 착지 후 땅을 헤엄쳐 가까운 탱크를 물고 사라집니다.", color: "#101820", shell: "#101820", glow: "#9deaff" },
   cheese: { label: "CH", name: "치즈 탱크", desc: "맞은 탱크를 먹여서 키우고 피격 판정을 넓힙니다.", color: "#ffd84d", shell: "#ffd84d", glow: "#fff2a0" },
@@ -2353,7 +2353,9 @@ function drawCruiseProjectile(p) {
 
 function drawPlaneProjectile(p) {
   const dropped = Boolean(p.planeDropped);
-  const flap = Math.sin((p.age || 0) * 18) * 1.5;
+  const flap = Math.sin((p.age || 0) * 24) * 1.2;
+  ctx.save();
+  ctx.scale(0.62, 0.62);
   const body = ctx.createLinearGradient(-22, -7, 28, 7);
   body.addColorStop(0, "#2f5a7d");
   body.addColorStop(0.48, "#8fd0ff");
@@ -2396,6 +2398,7 @@ function drawPlaneProjectile(p) {
   ctx.moveTo(-14, -5);
   ctx.lineTo(18, -3);
   ctx.stroke();
+  ctx.restore();
   return true;
 }
 
