@@ -2355,7 +2355,7 @@ function drawPlaneProjectile(p) {
   const dropped = Boolean(p.planeDropped);
   const flap = Math.sin((p.age || 0) * 24) * 1.2;
   ctx.save();
-  ctx.scale(0.62, 0.62);
+  ctx.scale(0.31, 0.31);
   const body = ctx.createLinearGradient(-22, -7, 28, 7);
   body.addColorStop(0, "#2f5a7d");
   body.addColorStop(0.48, "#8fd0ff");
