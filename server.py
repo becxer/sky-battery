@@ -287,12 +287,17 @@ def make_platform_strip(x, y, w, h):
 
 
 def install_platforms(platforms):
+    return refresh_platform_state(platforms)
+
+
+def refresh_platform_state(platforms):
     state["platformMask"] = state["platformGround"][:]
     visible = []
     for platform in sorted(platforms, key=platform_sort_y):
         if platform_is_visible(platform):
             visible.append(platform)
             add_platform_to_mask(platform)
+    rebuild_platform_collision_cache(visible)
     return visible
 
 
@@ -330,12 +335,72 @@ def add_strip_to_mask(platform):
             state["platformMask"][i] = min(state["platformMask"][i], round(platform["y"] + platform["h"] + STRIP_PLATFORM_EXTRA))
 
 
+def reset_platform_collision_cache():
+    state["platformSurface"] = [None] * W
+    state["platformColumns"] = [[] for _ in range(W)]
+
+
+def add_platform_collision_interval(x, top_y, bottom_y):
+    if top_y is None or bottom_y is None or bottom_y < top_y:
+        return
+    i = int(clamp(round(x), 0, W - 1))
+    top = float(top_y)
+    bottom = float(bottom_y)
+    state["platformColumns"][i].append((top, bottom))
+    surface = state["platformSurface"][i]
+    if surface is None or top < surface:
+        state["platformSurface"][i] = top
+
+
+def add_strip_to_collision_cache(platform):
+    bottom_y = platform["y"] + platform["h"] + STRIP_PLATFORM_EXTRA
+    for start, end in platform_strip_render_runs(platform):
+        for x in range(round(start), round(end) + 1):
+            surface = platform_surface_y(platform, x)
+            if surface is None or not platform_point_is_exposed(surface, x):
+                continue
+            add_platform_collision_interval(x, surface, bottom_y)
+
+
+def add_island_to_collision_cache(platform):
+    min_x = round(min(p[0] for p in platform["points"]))
+    max_x = round(max(p[0] for p in platform["points"]))
+    for x in range(min_x, max_x + 1):
+        surface = island_surface_y(platform, x)
+        if surface is None or not island_drawn_at(platform, x):
+            continue
+        add_platform_collision_interval(x, surface, surface + platform.get("h", 10) + ISLAND_PLATFORM_EXTRA)
+
+
+def add_platform_to_collision_cache(platform):
+    if platform["type"] == "thin":
+        add_strip_to_collision_cache(platform)
+    elif platform["type"] == "steps":
+        for step in platform["steps"]:
+            add_strip_to_collision_cache(step)
+    elif platform["type"] == "island":
+        add_island_to_collision_cache(platform)
+
+
+def rebuild_platform_collision_cache(platforms=None):
+    reset_platform_collision_cache()
+    for platform in platforms if platforms is not None else state.get("platforms", []):
+        add_platform_to_collision_cache(platform)
+    for column in state["platformColumns"]:
+        column.sort()
+
+
 def terrain_y(x):
     i = int(clamp(round(x), 0, W - 1))
     return state["ground"][i]
 
 
 def platform_y_at(x):
+    i = int(clamp(round(x), 0, W - 1))
+    surfaces = state.get("platformSurface")
+    if surfaces:
+        return surfaces[i]
+
     best = None
     for platform in state.get("platforms", []):
         if platform["type"] == "thin":
@@ -422,6 +487,10 @@ def point_hits_island(platform, x, y):
 def solid_at(x, y):
     if y >= terrain_y(x):
         return True
+    columns = state.get("platformColumns")
+    if columns:
+        i = int(clamp(round(x), 0, W - 1))
+        return any(top <= y <= bottom for top, bottom in columns[i])
     return any(point_hits_platform(platform, x, y) for platform in state.get("platforms", []))
 
 
@@ -954,6 +1023,8 @@ state = {
     "ground": build_terrain(),
     "platformGround": [],
     "platformMask": [],
+    "platformSurface": [],
+    "platformColumns": [],
     "platforms": [],
     "players": [],
     "playerCount": DEFAULT_PLAYER_COUNT,
@@ -1426,20 +1497,20 @@ def damage_platforms(x, y, radius):
             continue
         if platform["type"] == "thin":
             damaged = crater_platform_strip(platform, x, y, radius)
-            if damaged and platform_is_visible(damaged):
+            if damaged:
                 remaining.append(damaged)
         elif platform["type"] == "steps":
             steps = []
             for step in platform["steps"]:
                 damaged = crater_platform_strip(step, x, y, radius)
-                if damaged and platform_strip_visible(damaged):
+                if damaged:
                     steps.append(damaged)
             if steps:
                 remaining.append({"type": "steps", "steps": steps})
         elif platform["type"] == "island":
             damaged = damage_island(platform, x, y, radius)
-            remaining.extend(piece for piece in damaged if platform_is_visible(piece))
-    state["platforms"] = remaining
+            remaining.extend(damaged)
+    state["platforms"] = refresh_platform_state(remaining)
 
 
 def carve_laser_path(x, y, angle):
@@ -2351,7 +2422,6 @@ def snapshot():
     state["tick"] += 1
     event_sounds = list(sounds)
     sounds.clear()
-    state["platforms"] = [platform for platform in state["platforms"] if platform_is_visible(platform)]
     return {
         "ground": state["ground"],
         "platformGround": state["platformGround"],
