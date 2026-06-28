@@ -121,6 +121,8 @@ ORCA_MIN_SWIM_TIME = 0.12
 ORCA_SWIM_SPEED = 320
 ORCA_MAX_AGE = 2.2
 ORCA_MAX_COUNT = 4
+INK_MIN_DAMAGE = 3
+INK_TURNS = 1
 HEAL_SELF_RATIO = 0.2
 HEART_RESIZE_COOLDOWN = 0.0
 HEART_MIN_SCALE = 0.65
@@ -140,6 +142,7 @@ TANK_TYPES = {
     "dragon": {"label": "Dragon", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "dragon": True},
     "chain": {"label": "Chain", "damage": 0.78, "radius": 0.86, "shots": [0], "barrels": [0], "bouncy": True, "maxBounces": 3},
     "poop": {"label": "Poop", "damage": 0.34, "radius": 0.72, "shots": [0], "barrels": [0], "effect": "poop"},
+    "squid": {"label": "Squid", "damage": 1.0, "radius": 0.88, "shots": [0], "barrels": [0], "effect": "ink"},
     "nuke": {"label": "Nuke", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "nuke": True},
     "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
     "plane": {"label": "Plane", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "plane": True},
@@ -180,6 +183,7 @@ TANK_TYPE_WEIGHTS = {
     "dragon": 18,
     "chain": 18,
     "poop": 18,
+    "squid": 18,
     "nuke": 10,
     "cruise": 14,
     "plane": 16,
@@ -977,6 +981,9 @@ def make_player(index, x):
         "poopDamage": 0,
         "poopStacks": 0,
         "cheeseStacks": 0,
+        "inkTurns": 0,
+        "inkActive": False,
+        "inkSeed": 0,
         "shieldActive": False,
         "shieldCooldown": 0,
         "respawnTimer": 0,
@@ -996,6 +1003,9 @@ def make_dummy_target(index, x):
         "poopDamage": 0,
         "poopStacks": 0,
         "cheeseStacks": 0,
+        "inkTurns": 0,
+        "inkActive": False,
+        "inkSeed": 0,
         "shieldActive": False,
         "shieldCooldown": 0,
         "respawnTimer": 0,
@@ -1126,9 +1136,20 @@ def start_turn_for(index):
     stacks = max(0, int(player.get("poopStacks", 0)))
     player["moveRemaining"] = round(MOVE_LIMIT * (POOP_MOVE_FACTOR ** stacks))
     player["stuckTurns"] = 0
+    if player.get("inkTurns", 0) > 0:
+        player["inkTurns"] = max(0, int(player.get("inkTurns", 0)) - 1)
+        player["inkActive"] = True
+    else:
+        player["inkActive"] = False
+
+
+def finish_turn_for(index):
+    if index in range(len(state["players"])):
+        state["players"][index]["inkActive"] = False
 
 
 def next_turn():
+    finish_turn_for(state["current"])
     tick_shields()
     alive = [i for i, p in enumerate(state["players"]) if p["health"] > 0]
     if player_count() == 1:
@@ -1578,12 +1599,34 @@ def add_cheese_stack(player):
     })
 
 
+def apply_ink(player):
+    player["inkTurns"] = max(INK_TURNS, int(player.get("inkTurns", 0)))
+    player["inkSeed"] = random.randint(1, 1_000_000)
+    state["effects"].append({
+        "type": "ink-splash",
+        "x": player["x"],
+        "y": player["y"] - 18 * tank_size_multiplier(player),
+        "life": 28,
+        "maxLife": 28,
+    })
+
+
 def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, base_damage=None, effect=None, owner=None, advance_turn=True):
     base_radius = clamp(14 + impact_speed * EXPLOSION_SPEED_SCALE, EXPLOSION_MIN_RADIUS, EXPLOSION_MAX_RADIUS)
     radius_cap = EXPLOSION_MAX_RADIUS * max(1.0, radius_multiplier)
     radius = clamp(base_radius * radius_multiplier, 8, radius_cap)
-    carve_crater(x, y, radius)
-    damage_platforms(x, y, radius * EXPLOSION_PLATFORM_SCALE)
+    is_ink = effect == "ink"
+    if not is_ink:
+        carve_crater(x, y, radius)
+        damage_platforms(x, y, radius * EXPLOSION_PLATFORM_SCALE)
+    else:
+        state["effects"].append({
+            "type": "ink-splash",
+            "x": x,
+            "y": y,
+            "life": 22,
+            "maxLife": 22,
+        })
     hit = False
     damaged = False
     blocked = False
@@ -1628,6 +1671,8 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
                 damage = round(base_damage * damage_multiplier)
             else:
                 damage = round(falloff * (36 + impact_speed * 0.032) * damage_multiplier)
+            if effect == "ink":
+                damage = max(INK_MIN_DAMAGE, damage)
             if effect == "poop" and index != owner:
                 stacks = max(0, int(player.get("poopStacks", 0))) + 1
                 damage = max(1, round(damage * stacks))
@@ -1639,29 +1684,32 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
                 retired = True
             elif effect == "cheese":
                 add_cheese_stack(player)
+            elif effect == "ink" and index != owner:
+                apply_ink(player)
             player["vx"] += (dx / max(distance, 1)) * falloff * 9
             player["vy"] += (dy / max(distance, 1)) * falloff * 9 - falloff * 8
             player["av"] += falloff * player["dir"] * 0.12
             hit = True
             damaged = True
 
-    particle_scale = clamp(radius / EXPLOSION_MAX_RADIUS, 0.5, 3.0)
-    particle_count = round(36 * clamp(particle_scale, 0.7, 2.4))
-    particle_life = round(28 + particle_scale * 10)
-    for _ in range(particle_count):
-        speed = (random.random() * 3.6 + 0.9) * (0.78 + particle_scale * 0.24)
-        angle = random.random() * math.pi * 2
-        state["particles"].append({
-            "x": x,
-            "y": y,
-            "vx": math.cos(angle) * speed,
-            "vy": math.sin(angle) * speed - 0.9,
-            "life": particle_life,
-            "maxLife": particle_life,
-            "size": (random.random() * 2.4 + 1.2) * (0.78 + particle_scale * 0.28),
-        })
+    if not is_ink:
+        particle_scale = clamp(radius / EXPLOSION_MAX_RADIUS, 0.5, 3.0)
+        particle_count = round(36 * clamp(particle_scale, 0.7, 2.4))
+        particle_life = round(28 + particle_scale * 10)
+        for _ in range(particle_count):
+            speed = (random.random() * 3.6 + 0.9) * (0.78 + particle_scale * 0.24)
+            angle = random.random() * math.pi * 2
+            state["particles"].append({
+                "x": x,
+                "y": y,
+                "vx": math.cos(angle) * speed,
+                "vy": math.sin(angle) * speed - 0.9,
+                "life": particle_life,
+                "maxLife": particle_life,
+                "size": (random.random() * 2.4 + 1.2) * (0.78 + particle_scale * 0.28),
+            })
 
-    sounds.append("explode")
+    sounds.append("ink" if is_ink else "explode")
     if effect == "poop":
         sounds.append("poop")
     if effect == "cheese" and damaged:
@@ -1802,6 +1850,9 @@ def respawn_dummy_target(player):
     player["poopDamage"] = 0
     player["poopStacks"] = 0
     player["cheeseStacks"] = 0
+    player["inkTurns"] = 0
+    player["inkActive"] = False
+    player["inkSeed"] = 0
     reset_shield_for_tank_type(player)
     player["respawnTimer"] = 0
     player["angleBody"] = ground_angle_at(player["x"], player["y"])
@@ -2428,7 +2479,7 @@ def snapshot():
         "platformMask": state["platformMask"],
         "platforms": state["platforms"],
         "players": [
-            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "cheeseStacks", "shieldActive", "shieldCooldown", "respawnTimer", "isDummy")}
+            {k: p[k] for k in ("name", "tankType", "x", "y", "angleBody", "health", "color", "dir", "aim", "power", "moveRemaining", "stuckTurns", "poopDamage", "poopStacks", "cheeseStacks", "inkTurns", "inkActive", "inkSeed", "shieldActive", "shieldCooldown", "respawnTimer", "isDummy")}
             for p in state["players"]
         ],
         "playerCount": state["playerCount"],

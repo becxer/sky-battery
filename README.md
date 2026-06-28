@@ -187,6 +187,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Dragon Tank / 드래곤 탱크 | Black close-range tank that breathes a short line of fire for 30-36 area damage. |
 | 3-Cushion Chain / 3쿠션 체인 탱크 | Bounces off terrain up to three times, slightly steering each bounce toward the nearest tank. |
 | Poop Tank / 똥탱크 | Adds poop stacks that reduce movement and increase later poop damage. |
+| Squid Tank / 오징어탱크 | Deals near-normal damage and inks the target; that player's next turn is obscured by dark circular ink spots. |
 | Nuke Tank / 핵폭탄 탱크 | Marks a target point first; hitting the same point again triggers a huge blast. |
 | Cruise Missile / 순항미사일 탱크 | Launches a slow missile; Fire or Space applies lift during flight. |
 | Plane Tank / 비행기탱크 | Launches a small, fast, straight-flying plane; pressing Fire or Space once drops three 15-degree missiles while the plane can keep flying or crash-explode. |

@@ -51,6 +51,7 @@ const TANK_TYPE_META = {
   laser: { label: "L", name: "레이저 탱크", desc: "직선 레이저로 맞은 경로의 지형을 길게 깎습니다.", color: "#5df6ff", shell: "#5df6ff", glow: "#d8ffff" },
   chain: { label: "C", name: "3쿠션 체인", desc: "지형에 튕길 때 가까운 탱크 쪽으로 살짝 방향을 보정합니다.", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
+  squid: { label: "SQ", name: "오징어탱크", desc: "먹물을 맞은 상대의 다음 턴 화면을 검은 얼룩으로 가립니다.", color: "#3b255f", shell: "#151015", glow: "#8d6bff" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
   plane: { label: "PL", name: "비행기탱크", desc: "작고 빠르게 직선 비행하며 Fire/Space로 미사일 3발을 떨굽니다.", color: "#8fd0ff", shell: "#d7f3ff", glow: "#ffffff" },
@@ -93,6 +94,8 @@ let seat = null;
 let latest = null;
 let audio;
 let eventSource = null;
+let inkOverlaySeed = null;
+let inkOverlayStartTick = 0;
 let isAdjustingControls = false;
 let cloudOffset = 0;
 let lastRenderTime = performance.now();
@@ -242,6 +245,10 @@ function playSound(name) {
   } else if (name === "poop") {
     tone(92, 0.18, "sawtooth", 0.08, 56);
     setTimeout(() => tone(130, 0.08, "square", 0.045, 90), 80);
+  } else if (name === "ink") {
+    tone(118, 0.14, "sawtooth", 0.07, 62);
+    setTimeout(() => tone(210, 0.09, "triangle", 0.045, 140), 80);
+    setTimeout(() => tone(74, 0.12, "square", 0.04, 48), 145);
   } else if (name === "target") {
     tone(740, 0.08, "triangle", 0.045, 520);
     setTimeout(() => tone(740, 0.08, "triangle", 0.035, 520), 120);
@@ -1193,6 +1200,39 @@ function drawPoopStacks() {
   });
 }
 
+function drawInkStatuses() {
+  if (!latest) return;
+  latest.players.forEach((player) => {
+    if (player.health <= 0) return;
+    if (!player.inkActive && !(player.inkTurns > 0)) return;
+
+    const label = "먹물";
+    const size = tankSizeMultiplier(player);
+    const nameY = Math.max(22, player.y - 42 * size);
+    const y = Math.max(12, nameY - (cheeseStackCount(player) ? 68 : player.poopStacks ? 46 : 24));
+    const x = clamp(player.x, 34, W - 34);
+
+    ctx.save();
+    ctx.font = "900 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(10, 8, 14, 0.9)";
+    roundRect(x - 31, y - 10, 62, 20, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#8d6bff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = "#151015";
+    ctx.beginPath();
+    ctx.arc(x - 21, y + 1, 5, 0, Math.PI * 2);
+    ctx.arc(x - 15, y - 3, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#d8caff";
+    ctx.fillText(label, x + 8, y + 0.2);
+    ctx.restore();
+  });
+}
+
 function drawCheeseStacks() {
   if (!latest) return;
   latest.players.forEach((player) => {
@@ -1647,6 +1687,27 @@ function drawTankTypeTrim(player) {
     ctx.arc(1, -26, 7, 0, Math.PI * 2);
     ctx.arc(10, -21, 5, 0, Math.PI * 2);
     ctx.fill();
+  } else if (type === "squid") {
+    const ink = ctx.createRadialGradient(-7, -29, 3, 0, -23, 25);
+    ink.addColorStop(0, "#8d6bff");
+    ink.addColorStop(0.45, "#3b255f");
+    ink.addColorStop(1, "#151015");
+    ctx.fillStyle = ink;
+    ctx.beginPath();
+    ctx.ellipse(0, -24, 25, 15, -0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(216, 202, 255, 0.58)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.strokeStyle = "#151015";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    [-15, -6, 3, 12].forEach((x, index) => {
+      ctx.beginPath();
+      ctx.moveTo(x, -13);
+      ctx.quadraticCurveTo(x - 5 + index * 2, -5, x - 10 + index * 5, 2);
+      ctx.stroke();
+    });
   } else if (type === "nuke") {
     ctx.fillStyle = "#2a1111";
     roundRect(-26, -31, 52, 18, 7);
@@ -1824,6 +1885,8 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 31, thickness: 7, tip: 5, accent: "#c8d0d8" });
   } else if (type === "poop") {
     drawBarrel(player, undefined, 0, { length: 26, thickness: 8, tip: 6, accent: "#8b5a2b" });
+  } else if (type === "squid") {
+    drawBarrel(player, undefined, 0, { length: 28, thickness: 9, tip: 7, accent: "#3b255f" });
   } else if (type === "nuke") {
     drawBarrel(player, undefined, 0, { length: 38, thickness: 9, tip: 7, accent: "#ff3030" });
   } else if (type === "cheese") {
@@ -1924,6 +1987,7 @@ function projectileTrailColor(p) {
   if (p.tankType === "artillery") return hexToRgba(artilleryProjectileColor(p), 0.82);
   if (p.tankType === "chain") return "rgba(220, 230, 240, 0.86)";
   if (p.tankType === "poop") return "rgba(132, 82, 38, 0.84)";
+  if (p.tankType === "squid") return "rgba(20, 16, 22, 0.9)";
   if (p.tankType === "nuke") return "rgba(255, 48, 48, 0.9)";
   if (p.tankType === "orca") return "rgba(157, 234, 255, 0.88)";
   if (p.tankType === "cheese") return "rgba(255, 216, 77, 0.92)";
@@ -2424,6 +2488,36 @@ function drawPlaneMissileProjectile() {
   return true;
 }
 
+function drawSquidProjectile(p) {
+  const wobble = Math.sin((p.age || 0) * 18) * 1.6;
+  const ink = ctx.createRadialGradient(-4, -4, 2, 0, 0, 14);
+  ink.addColorStop(0, "#8d6bff");
+  ink.addColorStop(0.38, "#3b255f");
+  ink.addColorStop(1, "#050406");
+  ctx.fillStyle = ink;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 13, 9, 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(216, 202, 255, 0.45)";
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  ctx.strokeStyle = "#050406";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  [-6, -1, 4, 8].forEach((x, index) => {
+    ctx.beginPath();
+    ctx.moveTo(x, 6);
+    ctx.quadraticCurveTo(x - 7, 10 + wobble, x - 12 - index, 5 + index);
+    ctx.stroke();
+  });
+  ctx.fillStyle = "rgba(21, 16, 21, 0.45)";
+  ctx.beginPath();
+  ctx.arc(-10, -4, 4, 0, Math.PI * 2);
+  ctx.arc(7, 5, 3, 0, Math.PI * 2);
+  ctx.fill();
+  return true;
+}
+
 function drawProjectileAsset(p, meta, flightAngle) {
   const type = p.tankType || "normal";
   if (type === "red") {
@@ -2440,6 +2534,9 @@ function drawProjectileAsset(p, meta, flightAngle) {
   }
   if (type === "poop" || type === "poopdrop") {
     return drawPoopProjectile();
+  }
+  if (type === "squid") {
+    return drawSquidProjectile(p);
   }
   if (type === "nuke") {
     return drawNukeProjectile();
@@ -2731,6 +2828,23 @@ function drawEffects() {
         ctx.stroke();
       }
       ctx.restore();
+    } else if (effect.type === "ink-splash") {
+      ctx.save();
+      const spread = 10 + (1 - fade) * 36;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = `rgba(5, 4, 7, ${0.55 * fade})`;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, spread * 0.76, 0, Math.PI * 2);
+      ctx.arc(effect.x - spread * 0.42, effect.y + spread * 0.08, spread * 0.32, 0, Math.PI * 2);
+      ctx.arc(effect.x + spread * 0.38, effect.y - spread * 0.18, spread * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(141, 107, 255, ${0.58 * fade})`;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, spread, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     } else if (effect.type === "orca-bite") {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
@@ -2933,6 +3047,51 @@ function drawInGameHud() {
   ctx.restore();
 }
 
+function seededRandom(seed) {
+  const value = Math.sin(seed) * 10000;
+  return value - Math.floor(value);
+}
+
+function inkRandom(seed, index, salt) {
+  return seededRandom(seed + index * 97.31 + salt * 31.17);
+}
+
+function drawInkOverlay() {
+  const player = latest?.players?.[seat];
+  if (!player?.inkActive) {
+    inkOverlaySeed = null;
+    inkOverlayStartTick = 0;
+    return;
+  }
+  const seed = player.inkSeed || 1;
+  if (inkOverlaySeed !== seed) {
+    inkOverlaySeed = seed;
+    inkOverlayStartTick = latest.tick || 0;
+  }
+
+  const progress = clamp(((latest.tick || 0) - inkOverlayStartTick) / 45, 0, 1);
+  const alpha = 0.12 + progress * 0.18;
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+  ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 18; i += 1) {
+    const x = inkRandom(seed, i, 1) * W;
+    const y = inkRandom(seed, i, 2) * H;
+    const radius = (36 + inkRandom(seed, i, 3) * 118) * (0.55 + progress * 0.45);
+    const opacity = (0.26 + inkRandom(seed, i, 4) * 0.32) * (0.45 + progress * 0.55);
+    const blob = ctx.createRadialGradient(x, y, radius * 0.12, x, y, radius);
+    blob.addColorStop(0, `rgba(2, 2, 4, ${opacity})`);
+    blob.addColorStop(0.54, `rgba(8, 6, 12, ${opacity * 0.78})`);
+    blob.addColorStop(1, "rgba(8, 6, 12, 0)");
+    ctx.fillStyle = blob;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function render() {
   drawSky();
   if (latest) {
@@ -2948,11 +3107,13 @@ function render() {
     latest.players.forEach(drawNameTag);
     drawCheeseStacks();
     drawPoopStacks();
+    drawInkStatuses();
     drawProjectile();
     drawEffects();
     drawParticles();
     drawInGameHud();
     drawWinner();
+    drawInkOverlay();
   } else {
     ctx.fillStyle = "rgba(255,255,255,0.8)";
     ctx.font = "700 32px system-ui, sans-serif";
