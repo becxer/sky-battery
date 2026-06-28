@@ -3070,19 +3070,20 @@ function drawInkOverlay() {
   }
 
   const progress = clamp(((latest.tick || 0) - inkOverlayStartTick) / 45, 0, 1);
-  const alpha = 0.12 + progress * 0.18;
+  const alpha = 0.2 + progress * 0.24;
   ctx.save();
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
   ctx.fillRect(0, 0, W, H);
-  for (let i = 0; i < 18; i += 1) {
+  for (let i = 0; i < 26; i += 1) {
     const x = inkRandom(seed, i, 1) * W;
     const y = inkRandom(seed, i, 2) * H;
-    const radius = (36 + inkRandom(seed, i, 3) * 118) * (0.55 + progress * 0.45);
-    const opacity = (0.26 + inkRandom(seed, i, 4) * 0.32) * (0.45 + progress * 0.55);
+    const radius = (46 + inkRandom(seed, i, 3) * 154) * (0.62 + progress * 0.38);
+    const opacity = (0.72 + inkRandom(seed, i, 4) * 0.28) * (0.5 + progress * 0.5);
     const blob = ctx.createRadialGradient(x, y, radius * 0.12, x, y, radius);
-    blob.addColorStop(0, `rgba(2, 2, 4, ${opacity})`);
-    blob.addColorStop(0.54, `rgba(8, 6, 12, ${opacity * 0.78})`);
+    blob.addColorStop(0, `rgba(0, 0, 0, ${opacity})`);
+    blob.addColorStop(0.34, `rgba(0, 0, 0, ${opacity * 0.92})`);
+    blob.addColorStop(0.72, `rgba(5, 4, 8, ${opacity * 0.42})`);
     blob.addColorStop(1, "rgba(8, 6, 12, 0)");
     ctx.fillStyle = blob;
     ctx.beginPath();

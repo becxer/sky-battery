@@ -123,6 +123,7 @@ ORCA_MAX_AGE = 2.2
 ORCA_MAX_COUNT = 4
 INK_MIN_DAMAGE = 3
 INK_TURNS = 1
+INK_DUMMY_SECONDS = 2.8
 HEAL_SELF_RATIO = 0.2
 HEART_RESIZE_COOLDOWN = 0.0
 HEART_MIN_SCALE = 0.65
@@ -984,6 +985,7 @@ def make_player(index, x):
         "inkTurns": 0,
         "inkActive": False,
         "inkSeed": 0,
+        "inkTimer": 0,
         "shieldActive": False,
         "shieldCooldown": 0,
         "respawnTimer": 0,
@@ -1006,6 +1008,7 @@ def make_dummy_target(index, x):
         "inkTurns": 0,
         "inkActive": False,
         "inkSeed": 0,
+        "inkTimer": 0,
         "shieldActive": False,
         "shieldCooldown": 0,
         "respawnTimer": 0,
@@ -1600,7 +1603,12 @@ def add_cheese_stack(player):
 
 
 def apply_ink(player):
-    player["inkTurns"] = max(INK_TURNS, int(player.get("inkTurns", 0)))
+    if player.get("isDummy"):
+        player["inkTurns"] = 0
+        player["inkActive"] = True
+        player["inkTimer"] = INK_DUMMY_SECONDS
+    else:
+        player["inkTurns"] = max(INK_TURNS, int(player.get("inkTurns", 0)))
     player["inkSeed"] = random.randint(1, 1_000_000)
     state["effects"].append({
         "type": "ink-splash",
@@ -1609,6 +1617,23 @@ def apply_ink(player):
         "life": 28,
         "maxLife": 28,
     })
+
+
+def update_dummy_ink_timers(dt):
+    if player_count() != 1:
+        return
+    for player in state["players"]:
+        if not player.get("isDummy"):
+            continue
+        if player["health"] <= 0:
+            player["inkActive"] = False
+            player["inkTimer"] = 0
+            continue
+        if not player.get("inkActive"):
+            continue
+        player["inkTimer"] = max(0, player.get("inkTimer", 0) - dt)
+        if player["inkTimer"] <= 0:
+            player["inkActive"] = False
 
 
 def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, base_damage=None, effect=None, owner=None, advance_turn=True):
@@ -1853,6 +1878,7 @@ def respawn_dummy_target(player):
     player["inkTurns"] = 0
     player["inkActive"] = False
     player["inkSeed"] = 0
+    player["inkTimer"] = 0
     reset_shield_for_tank_type(player)
     player["respawnTimer"] = 0
     player["angleBody"] = ground_angle_at(player["x"], player["y"])
@@ -2521,6 +2547,7 @@ def game_loop():
             if state["phase"] == "playing" and state["winner"] is None:
                 for player in state["players"]:
                     update_player(player, 1 / 60)
+                update_dummy_ink_timers(1 / 60)
                 update_dummy_respawns(1 / 60)
                 update_zombies(1 / 60)
                 update_projectiles(1 / 60)
