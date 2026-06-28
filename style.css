@@ -433,6 +433,13 @@ button.danger {
   backdrop-filter: blur(6px);
 }
 
+.reset-overlay.vote-active {
+  color: #fff7a8;
+  background: rgba(255, 48, 48, 0.86);
+  border-color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 0 18px rgba(255, 48, 48, 0.55);
+}
+
 .hint {
   margin: 8px 2px 0;
   font-size: 14px;

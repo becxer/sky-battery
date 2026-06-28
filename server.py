@@ -156,7 +156,7 @@ TANK_TYPES = {
     "boing": {"label": "Boing", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "boing": True},
     "superball": {
         "label": "Ball",
-        "damage": 0.18,
+        "damage": 0.26,
         "radius": 0.52,
         "shots": [-9, -4.5, 0, 4.5, 9],
         "barrels": [-14, -7, 0, 7, 14],
@@ -215,6 +215,79 @@ def clamp(value, low, high):
 
 def player_count():
     return int(state.get("playerCount", DEFAULT_PLAYER_COUNT))
+
+
+def player_seat_is_active(seat):
+    return seat in range(player_count()) and not state["players"][seat].get("isDummy")
+
+
+def surrender_vote_eligible_seats():
+    connected = {
+        int(client["seat"])
+        for cid, client in clients.items()
+        if cid in listeners and player_seat_is_active(int(client.get("seat", -1)))
+    }
+    if connected:
+        return connected
+    joined = {
+        int(client["seat"])
+        for client in clients.values()
+        if player_seat_is_active(int(client.get("seat", -1)))
+    }
+    return joined or set(range(player_count()))
+
+
+def surrender_vote_info():
+    eligible = surrender_vote_eligible_seats()
+    votes = state.setdefault("surrenderVotes", {})
+    valid_votes = {
+        cid: int(seat)
+        for cid, seat in votes.items()
+        if (cid in clients or cid.startswith("ko:")) and int(seat) in eligible
+    }
+    for seat in eligible:
+        if state["players"][seat]["health"] <= 0:
+            valid_votes[f"ko:{seat}"] = seat
+    if valid_votes != votes:
+        state["surrenderVotes"] = valid_votes
+    vote_count = len(set(valid_votes.values()))
+    eligible_count = max(1, len(eligible))
+    needed = eligible_count // 2 + 1
+    return {
+        "count": vote_count,
+        "needed": needed,
+        "eligible": eligible_count,
+        "active": vote_count > 0,
+    }
+
+
+def cast_surrender_vote(client_id):
+    client = clients.get(client_id)
+    if state["phase"] != "playing" or not client:
+        return {"ok": False, "reset": False, "surrenderVote": surrender_vote_info()}
+    seat = int(client.get("seat", -1))
+    if not player_seat_is_active(seat):
+        return {"ok": False, "reset": False, "surrenderVote": surrender_vote_info()}
+    votes = state.setdefault("surrenderVotes", {})
+    for cid, voted_seat in list(votes.items()):
+        if int(voted_seat) == seat:
+            votes.pop(cid, None)
+    votes[client_id] = seat
+    info = surrender_vote_info()
+    if info["count"] >= info["needed"]:
+        reset_game()
+        return {"ok": True, "reset": True, "surrenderVote": surrender_vote_info()}
+    return {"ok": True, "reset": False, "surrenderVote": info}
+
+
+def maybe_reset_from_surrender_votes():
+    if state["phase"] != "playing":
+        return False
+    info = surrender_vote_info()
+    if info["count"] >= info["needed"]:
+        reset_game()
+        return True
+    return False
 
 
 def build_terrain():
@@ -1051,6 +1124,7 @@ state = {
     "zombies": [],
     "orcas": [],
     "nukeMarks": [],
+    "surrenderVotes": {},
     "wind": 0,
     "skyMode": random_sky_mode(),
     "winner": None,
@@ -1084,6 +1158,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["zombies"] = []
     state["orcas"] = []
     state["nukeMarks"] = []
+    state["surrenderVotes"] = {}
     state["wind"] = round(random.uniform(-2.8, 2.8), 2)
     state["skyMode"] = random_sky_mode()
     state["winner"] = None
@@ -1101,6 +1176,7 @@ def recreate_world():
     state["zombies"] = []
     state["orcas"] = []
     state["nukeMarks"] = []
+    state["surrenderVotes"] = {}
     state["winner"] = None
     state["worldVersion"] += 1
     sounds.append("join")
@@ -2519,6 +2595,7 @@ def snapshot():
         "zombies": state.get("zombies", []),
         "orcas": state.get("orcas", []),
         "nukeMarks": state.get("nukeMarks", []),
+        "surrenderVote": surrender_vote_info(),
         "wind": state["wind"],
         "skyMode": state["skyMode"],
         "winner": state["winner"],
@@ -2552,6 +2629,8 @@ def game_loop():
                 update_zombies(1 / 60)
                 update_projectiles(1 / 60)
                 update_orcas(1 / 60)
+            if state["phase"] == "playing":
+                maybe_reset_from_surrender_votes()
             update_particles()
             update_effects()
             now = time.time()
@@ -2592,9 +2671,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/boost":
                 boost_for(str(body.get("id", "")))
                 self.send_json({"ok": True})
-            elif self.path == "/reset":
-                reset_game()
-                self.send_json({"ok": True})
+            elif self.path in ("/reset", "/surrender"):
+                self.send_json(cast_surrender_vote(str(body.get("id", ""))))
             elif self.path == "/host/start":
                 count = int(clamp(int(body.get("count", player_count())), MIN_PLAYERS, MAX_PLAYERS))
                 reset_game(count=count, kick_clients=True, phase="playing")

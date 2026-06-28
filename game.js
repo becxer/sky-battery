@@ -510,6 +510,7 @@ function updateTankDescription() {
 
 function updateHud() {
   if (!latest) return;
+  updateSurrenderButton();
   if (latest.phase !== "playing") {
     updateTankDescription();
     moveValue.textContent = "0";
@@ -730,9 +731,24 @@ function startMoveHold(event, direction) {
   }
 }
 
-function resetGame() {
+function surrenderGame() {
   ensureAudio();
-  postJson("/reset", { id: clientId }).catch(() => {});
+  postJson("/surrender", { id: clientId }).catch(() => {});
+}
+
+function surrenderVoteState() {
+  return latest?.surrenderVote || { count: 0, needed: 1, eligible: 1, active: false };
+}
+
+function updateSurrenderButton() {
+  if (!resetButton) return;
+  const vote = surrenderVoteState();
+  const active = latest?.phase === "playing" && vote.count > 0;
+  resetButton.textContent = active ? `항복 ${vote.count}/${vote.needed}` : "항복";
+  resetButton.classList.toggle("vote-active", active);
+  resetButton.title = active
+    ? `Surrender vote ${vote.count} of ${vote.needed}`
+    : "Vote to surrender and reset the world";
 }
 
 function drawSky() {
@@ -2992,7 +3008,7 @@ function drawWinner() {
   ctx.textAlign = "center";
   ctx.fillText(`${latest.players[latest.winner].name} wins`, W / 2, H / 2);
   ctx.font = "600 22px system-ui, sans-serif";
-  ctx.fillText("Press Reset for another round", W / 2, H / 2 + 42);
+  ctx.fillText("항복 투표로 새 판 시작", W / 2, H / 2 + 42);
 }
 
 function drawInGameHud() {
@@ -3044,6 +3060,32 @@ function drawInGameHud() {
   ctx.fillText(lines[1], 28, 47);
   ctx.fillStyle = isMine ? "#ffcd6f" : "#9db1c6";
   ctx.fillText(lines[2], 28, 66);
+  ctx.restore();
+}
+
+function drawSurrenderVoteBanner() {
+  const vote = surrenderVoteState();
+  if (!vote.active || vote.count <= 0) return;
+  const label = `항복 투표 ${vote.count}/${vote.needed}`;
+  const sublabel = vote.count >= vote.needed ? "새 판 준비" : "과반수 필요";
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "900 26px system-ui, sans-serif";
+  const width = Math.max(250, ctx.measureText(label).width + 52);
+  const x = W / 2;
+  const y = 54;
+  ctx.fillStyle = "rgba(255, 48, 48, 0.88)";
+  roundRect(x - width / 2, y - 28, width, 56, 12);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.86)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = "#fff7a8";
+  ctx.fillText(label, x, y - 8);
+  ctx.font = "900 12px system-ui, sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(sublabel, x, y + 15);
   ctx.restore();
 }
 
@@ -3113,6 +3155,7 @@ function render() {
     drawEffects();
     drawParticles();
     drawInGameHud();
+    drawSurrenderVoteBanner();
     drawWinner();
     drawInkOverlay();
   } else {
@@ -3182,7 +3225,7 @@ fireButton.addEventListener("pointercancel", () => {
 fireButton.addEventListener("click", (event) => {
   event.preventDefault();
 });
-resetButton.addEventListener("click", resetGame);
+resetButton.addEventListener("click", surrenderGame);
 window.addEventListener("beforeunload", closeEvents);
 
 window.addEventListener("keydown", (event) => {

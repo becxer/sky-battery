@@ -170,6 +170,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 - Drag the angle dial to aim.
 - Hold Fire to charge power, then release to shoot.
 - Keyboard: left/right arrows or `A`/`D` move, up/down arrows adjust angle, Space charges and fires.
+- Surrender is a majority vote; KO players are counted automatically and the visible counter shows votes needed before the world resets.
 - During cruise missile flight, Space or Fire applies lift.
 - During plane flight, Space or Fire drops three forward-falling missiles once.
 
