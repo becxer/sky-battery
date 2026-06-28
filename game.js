@@ -3176,6 +3176,16 @@ loginForm.addEventListener("submit", (event) => {
   });
 });
 
+nameInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing) return;
+  event.preventDefault();
+  if (loginForm.requestSubmit) {
+    loginForm.requestSubmit();
+  } else {
+    loginForm.dispatchEvent(new Event("submit", { cancelable: true }));
+  }
+});
+
 angleInput.addEventListener("input", sendControls);
 powerInput.addEventListener("input", sendControls);
 moveLeftButton.addEventListener("pointerdown", (event) => startMoveHold(event, -1));

@@ -240,14 +240,16 @@ def surrender_vote_eligible_seats():
 def surrender_vote_info():
     eligible = surrender_vote_eligible_seats()
     votes = state.setdefault("surrenderVotes", {})
+    auto_ko_enabled = state.get("winner") is None
     valid_votes = {
         cid: int(seat)
         for cid, seat in votes.items()
-        if (cid in clients or cid.startswith("ko:")) and int(seat) in eligible
+        if (cid in clients or (auto_ko_enabled and cid.startswith("ko:"))) and int(seat) in eligible
     }
-    for seat in eligible:
-        if state["players"][seat]["health"] <= 0:
-            valid_votes[f"ko:{seat}"] = seat
+    if auto_ko_enabled:
+        for seat in eligible:
+            if state["players"][seat]["health"] <= 0:
+                valid_votes[f"ko:{seat}"] = seat
     if valid_votes != votes:
         state["surrenderVotes"] = valid_votes
     vote_count = len(set(valid_votes.values()))
@@ -281,7 +283,7 @@ def cast_surrender_vote(client_id):
 
 
 def maybe_reset_from_surrender_votes():
-    if state["phase"] != "playing":
+    if state["phase"] != "playing" or state.get("winner") is not None:
         return False
     info = surrender_vote_info()
     if info["count"] >= info["needed"]:
