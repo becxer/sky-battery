@@ -105,6 +105,8 @@ SUPERBALL_MAX_SPLIT_LEVEL = 2
 SUPERBALL_MERGE_RADIUS = 20
 SUPERBALL_MERGE_DELAY = 0.28
 SUPERBALL_MAX_MASS = 8
+SUPERBALL_DAMAGE_MASS_EXPONENT = 0.90
+SUPERBALL_RADIUS_MASS_EXPONENT = 0.48
 ZOMBIE_SPEED = 62
 ZOMBIE_ATTACK_RANGE = 30
 ZOMBIE_ATTACK_INTERVAL = 0.42
@@ -160,7 +162,7 @@ TANK_TYPES = {
     "boing": {"label": "Boing", "damage": 1.0, "radius": 1.0, "shots": [0], "barrels": [0], "boing": True},
     "superball": {
         "label": "Ball",
-        "damage": 0.26,
+        "damage": 0.32,
         "radius": 0.52,
         "shots": [-9, -4.5, 0, 4.5, 9],
         "barrels": [-14, -7, 0, 7, 14],
@@ -795,8 +797,8 @@ def projectile_effect_multipliers(projectile):
         radius *= heart_scale
     if projectile.get("superball"):
         mass = clamp(projectile.get("superballMass", 1), 1, SUPERBALL_MAX_MASS)
-        damage *= mass ** 0.72
-        radius *= mass ** 0.48
+        damage *= mass ** SUPERBALL_DAMAGE_MASS_EXPONENT
+        radius *= mass ** SUPERBALL_RADIUS_MASS_EXPONENT
     if projectile.get("tankType") == "artillery":
         age = projectile.get("age", 0)
         damage *= artillery_damage_multiplier_for_age(age)

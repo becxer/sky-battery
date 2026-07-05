@@ -200,7 +200,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Heart Tank / 하트탱크 | Fires a pink heart; pressing Fire or Space changes its size, with a rare giant heart. |
 | Pujik Tank / 뿌직탱크 | Launches a butt-shaped projectile that can stop midair and drop poop. |
 | Boing Tank / 또잉탱크 | Hitting terrain jumps the tank to that point; tank-hit damage scales uniformly from 5 nearby to 70 at half-map distance or more. |
-| Ball Tank / 볼탱크 | Fires white balls that split, then merge into larger falling balls. |
+| Ball Tank / 볼탱크 | Fires white balls that split, then merge into heavier, harder-hitting falling balls. |
 | Super Tank / 슈퍼탱크 | Fixed 1-in-20 chance rainbow homing missile tank with five guided shots. |
 
 ## Troubleshooting
