@@ -177,32 +177,8 @@ TANK_TYPES = {
     },
 }
 TANK_TYPE_KEYS = list(TANK_TYPES.keys())
-TANK_TYPE_WEIGHTS = {
-    "normal": 24,
-    "shield": 18,
-    "multi": 24,
-    "red": 24,
-    "missile": 24,
-    "artillery": 24,
-    "laser": 18,
-    "dragon": 18,
-    "chain": 18,
-    "poop": 18,
-    "squid": 18,
-    "nuke": 10,
-    "cruise": 14,
-    "plane": 16,
-    "orca": 16,
-    "cat": 16,
-    "cheese": 18,
-    "zombie": 16,
-    "healing": 18,
-    "heart": 18,
-    "butt": 18,
-    "boing": 18,
-    "superball": 18,
-    "super": 1,
-}
+NON_SUPER_TANK_TYPE_KEYS = [key for key in TANK_TYPE_KEYS if key != "super"]
+SUPER_TANK_CHANCE = 1 / 20
 
 lock = threading.RLock()
 clients = {}
@@ -784,7 +760,9 @@ def aim_min_for_player(player):
 
 
 def random_tank_type():
-    return random.choices(TANK_TYPE_KEYS, weights=[TANK_TYPE_WEIGHTS.get(key, 1) for key in TANK_TYPE_KEYS], k=1)[0]
+    if random.random() < SUPER_TANK_CHANCE:
+        return "super"
+    return random.choice(NON_SUPER_TANK_TYPE_KEYS)
 
 
 def artillery_flight_factor(age):
