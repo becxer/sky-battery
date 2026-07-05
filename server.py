@@ -121,6 +121,9 @@ ORCA_MIN_SWIM_TIME = 0.12
 ORCA_SWIM_SPEED = 320
 ORCA_MAX_AGE = 2.2
 ORCA_MAX_COUNT = 4
+CAT_RUN_SPEED = 430
+CAT_SCRATCH_DAMAGE = 17
+CAT_SCRATCH_RADIUS = 34
 INK_MIN_DAMAGE = 3
 INK_TURNS = 1
 INK_DUMMY_SECONDS = 2.8
@@ -148,6 +151,7 @@ TANK_TYPES = {
     "cruise": {"label": "Cruise", "damage": 1.35, "radius": 1.05, "shots": [0], "barrels": [0], "cruise": True},
     "plane": {"label": "Plane", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "plane": True},
     "orca": {"label": "Orca", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "orca": True},
+    "cat": {"label": "Cat", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "effect": "catfood", "cat": True},
     "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True, "effect": "cheese"},
     "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
     "healing": {"label": "Healing", "damage": 0.8, "radius": 0.9, "shots": [0], "barrels": [0], "effect": "heal"},
@@ -189,6 +193,7 @@ TANK_TYPE_WEIGHTS = {
     "cruise": 14,
     "plane": 16,
     "orca": 16,
+    "cat": 16,
     "cheese": 18,
     "zombie": 16,
     "healing": 18,
@@ -829,13 +834,154 @@ def boing_direct_damage(projectile):
     return round(BOING_MIN_DIRECT_DAMAGE + (BOING_MAX_DIRECT_DAMAGE - BOING_MIN_DIRECT_DAMAGE) * ratio)
 
 
+def cat_tank_indexes():
+    return [
+        index
+        for index, player in enumerate(state.get("players", []))
+        if player.get("tankType") == "cat" and player["health"] > 0 and not player.get("isDummy")
+    ]
+
+
+def cat_is_running():
+    cat = state.get("cat")
+    return bool(cat and cat.get("running"))
+
+
+def ensure_shared_cat():
+    indexes = cat_tank_indexes()
+    if not indexes:
+        state["cat"] = None
+        return None
+    cat = state.get("cat")
+    if cat:
+        return cat
+    owner = state["players"][indexes[0]]
+    x = clamp(owner["x"] + owner["dir"] * 44, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    floor = supported_floor_y(x, owner["y"])
+    cat = {
+        "x": x,
+        "y": floor - 6,
+        "targetX": x,
+        "targetY": floor - 6,
+        "dir": owner["dir"],
+        "running": False,
+        "age": 0,
+        "scratched": [],
+        "meowTimer": 0,
+    }
+    state["cat"] = cat
+    return cat
+
+
+def command_cat_to_food(x, y, owner=None):
+    cat = ensure_shared_cat()
+    if not cat:
+        return False
+    target_x = clamp(x, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    target_floor = supported_floor_y(target_x, y)
+    cat["targetX"] = target_x
+    cat["targetY"] = target_floor - 6
+    cat["dir"] = 1 if target_x >= cat["x"] else -1
+    cat["running"] = True
+    cat["age"] = 0
+    cat["owner"] = owner
+    cat["scratched"] = []
+    cat["meowTimer"] = 0.01
+    state["effects"].append({
+        "type": "cat-food",
+        "x": target_x,
+        "y": target_floor - 10,
+        "life": 38,
+        "maxLife": 38,
+    })
+    sounds.append("catfood")
+    return True
+
+
+def scratch_player_with_cat(index, cat):
+    player = state["players"][index]
+    if player["health"] <= 0:
+        return
+    if shield_blocks_attack(player):
+        state["effects"].append({
+            "type": "shield-break",
+            "x": player["x"],
+            "y": player["y"] - 18 * tank_size_multiplier(player),
+            "life": 28,
+            "maxLife": 28,
+        })
+        return
+    player["health"] = max(0, player["health"] - CAT_SCRATCH_DAMAGE)
+    player["vx"] += cat.get("dir", 1) * 75
+    player["vy"] -= 36
+    player["av"] += cat.get("dir", 1) * 0.18
+    state["effects"].append({
+        "type": "cat-scratch",
+        "x": player["x"],
+        "y": player["y"] - 18 * tank_size_multiplier(player),
+        "dir": cat.get("dir", 1),
+        "life": 18,
+        "maxLife": 18,
+    })
+    sounds.append("scratch")
+    sounds.append("damage")
+    if player["health"] <= 0:
+        sounds.append("retire")
+
+
+def update_cat(dt):
+    was_running = cat_is_running()
+    cat = ensure_shared_cat()
+    if not cat:
+        if was_running and not state.get("projectiles") and not state.get("orcas") and state["winner"] is None:
+            resolve_shot_end()
+        return
+    cat["age"] = cat.get("age", 0) + dt
+    if not cat.get("running"):
+        floor = supported_floor_y(cat["x"], cat["y"])
+        cat["y"] += (floor - 6 - cat["y"]) * 0.28
+        return
+
+    previous_x = cat["x"]
+    target_x = cat.get("targetX", cat["x"])
+    direction = 1 if target_x >= cat["x"] else -1
+    cat["dir"] = direction
+    step = min(abs(target_x - cat["x"]), CAT_RUN_SPEED * dt)
+    cat["x"] += direction * step
+    floor = supported_floor_y(cat["x"], cat["y"])
+    cat["y"] = floor - 6
+    cat["meowTimer"] = cat.get("meowTimer", 0) - dt
+    if cat["meowTimer"] <= 0:
+        sounds.append("meow")
+        cat["meowTimer"] = 0.45
+
+    path_left = min(previous_x, cat["x"]) - CAT_SCRATCH_RADIUS
+    path_right = max(previous_x, cat["x"]) + CAT_SCRATCH_RADIUS
+    scratched = set(cat.get("scratched", []))
+    for index, player in enumerate(state["players"]):
+        if index in scratched or player["health"] <= 0:
+            continue
+        if path_left <= player["x"] <= path_right and abs((player["y"] - 10) - cat["y"]) <= CAT_SCRATCH_RADIUS + tank_hit_radius(player) * 0.35:
+            scratch_player_with_cat(index, cat)
+            scratched.add(index)
+    cat["scratched"] = sorted(scratched)
+
+    if abs(target_x - cat["x"]) <= 0.5:
+        cat["x"] = target_x
+        cat["y"] = cat.get("targetY", cat["y"])
+        cat["running"] = False
+        cat["scratched"] = []
+        if not state.get("projectiles") and not state.get("orcas") and state["winner"] is None:
+            resolve_shot_end()
+
+
 def sync_projectile_field():
     projectiles = state.get("projectiles", [])
     state["projectile"] = projectiles[0] if projectiles else None
 
 
 def active_projectiles():
-    return bool(state.get("projectiles") or state.get("projectile") or state.get("orcas"))
+    return bool(state.get("projectiles") or state.get("projectile") or state.get("orcas") or cat_is_running())
 
 
 def set_projectiles(projectiles):
@@ -1125,6 +1271,7 @@ state = {
     "effects": [],
     "zombies": [],
     "orcas": [],
+    "cat": None,
     "nukeMarks": [],
     "surrenderVotes": {},
     "wind": 0,
@@ -1159,6 +1306,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["effects"] = []
     state["zombies"] = []
     state["orcas"] = []
+    state["cat"] = None
     state["nukeMarks"] = []
     state["surrenderVotes"] = {}
     state["wind"] = round(random.uniform(-2.8, 2.8), 2)
@@ -1177,6 +1325,7 @@ def recreate_world():
     state["effects"] = []
     state["zombies"] = []
     state["orcas"] = []
+    state["cat"] = None
     state["nukeMarks"] = []
     state["surrenderVotes"] = {}
     state["winner"] = None
@@ -2044,6 +2193,10 @@ def handle_zombie_impact(projectile, x, y, speed):
         sounds.append("damage")
 
 
+def handle_cat_food_impact(projectile, x, y):
+    command_cat_to_food(x, y, projectile.get("owner"))
+
+
 def closest_orca_target(owner, x, y, radius):
     best_index = None
     best_reach = None
@@ -2397,6 +2550,9 @@ def projectile_player_direct_hit(projectile, speed):
         if projectile.get("orca"):
             handle_orca_landing(projectile, projectile["x"], projectile["y"])
             return True
+        if projectile.get("effect") == "catfood":
+            handle_cat_food_impact(projectile, projectile["x"], projectile["y"])
+            return True
         if projectile.get("plane"):
             handle_plane_crash(projectile, projectile["x"], projectile["y"], speed + 18)
             return True
@@ -2465,16 +2621,27 @@ def update_projectiles(dt):
         if zombie_hit is not None:
             zombie_index, zombie_x, zombie_y = zombie_hit
             impact_speed = speed + 10
-            if 0 <= zombie_index < len(state.get("zombies", [])):
-                state["zombies"].pop(zombie_index)
-            sounds.append("zombiedie")
-            if p.get("orca"):
+            if p.get("effect") == "catfood":
+                handle_cat_food_impact(p, zombie_x, zombie_y)
+            elif p.get("orca"):
+                if 0 <= zombie_index < len(state.get("zombies", [])):
+                    state["zombies"].pop(zombie_index)
+                sounds.append("zombiedie")
                 sounds.append("orca")
             elif p.get("plane"):
+                if 0 <= zombie_index < len(state.get("zombies", [])):
+                    state["zombies"].pop(zombie_index)
+                sounds.append("zombiedie")
                 handle_plane_crash(p, zombie_x, zombie_y, impact_speed)
             elif p.get("tankType") == "nuke":
+                if 0 <= zombie_index < len(state.get("zombies", [])):
+                    state["zombies"].pop(zombie_index)
+                sounds.append("zombiedie")
                 handle_nuke_impact(p, zombie_x, zombie_y, impact_speed)
             else:
+                if 0 <= zombie_index < len(state.get("zombies", [])):
+                    state["zombies"].pop(zombie_index)
+                sounds.append("zombiedie")
                 damage_multiplier, radius_multiplier, base_damage = projectile_effect_multipliers(p)
                 explode(
                     zombie_x,
@@ -2517,6 +2684,10 @@ def update_projectiles(dt):
                 handle_orca_landing(p, hit_x, hit_y)
                 exploded = True
                 continue
+            if p.get("effect") == "catfood":
+                handle_cat_food_impact(p, hit_x, hit_y)
+                exploded = True
+                continue
             if p.get("bouncy") and p.get("bounces", 0) < p.get("maxBounces", 0):
                 bounce_projectile(p, hit_x, hit_y)
                 survivors.append(p)
@@ -2548,7 +2719,7 @@ def update_projectiles(dt):
 
     survivors = merge_superballs(survivors)
     set_projectiles(survivors)
-    if not survivors and state["winner"] is None and not state.get("orcas"):
+    if not survivors and state["winner"] is None and not state.get("orcas") and not cat_is_running():
         resolve_shot_end()
 
 
@@ -2596,6 +2767,7 @@ def snapshot():
         "effects": state.get("effects", []),
         "zombies": state.get("zombies", []),
         "orcas": state.get("orcas", []),
+        "cat": state.get("cat"),
         "nukeMarks": state.get("nukeMarks", []),
         "surrenderVote": surrender_vote_info(),
         "wind": state["wind"],
@@ -2631,6 +2803,7 @@ def game_loop():
                 update_zombies(1 / 60)
                 update_projectiles(1 / 60)
                 update_orcas(1 / 60)
+                update_cat(1 / 60)
             if state["phase"] == "playing":
                 maybe_reset_from_surrender_votes()
             update_particles()

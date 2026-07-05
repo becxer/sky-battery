@@ -52,6 +52,7 @@ const TANK_TYPE_META = {
   chain: { label: "C", name: "3쿠션 체인", desc: "지형에 튕길 때 가까운 탱크 쪽으로 살짝 방향을 보정합니다.", color: "#c8d0d8", shell: "#9fa8b2", glow: "#f4f7fb" },
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   squid: { label: "SQ", name: "오징어탱크", desc: "먹물을 맞은 상대의 다음 턴 화면을 검은 얼룩으로 가립니다.", color: "#3b255f", shell: "#151015", glow: "#8d6bff" },
+  cat: { label: "CAT", name: "고양이탱크", desc: "공유 고양이에게 먹이를 쏘면 고양이가 달려가며 경로의 탱크를 할큅니다.", color: "#f1c27d", shell: "#5a3520", glow: "#ffe2a8" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
   plane: { label: "PL", name: "비행기탱크", desc: "작고 빠르게 직선 비행하며 Fire/Space로 미사일 3발을 떨굽니다.", color: "#8fd0ff", shell: "#d7f3ff", glow: "#ffffff" },
@@ -273,6 +274,15 @@ function playSound(name) {
     tone(210, 0.12, "sine", 0.055, 120);
     setTimeout(() => tone(520, 0.1, "triangle", 0.045, 780), 85);
     setTimeout(() => tone(140, 0.08, "sawtooth", 0.04, 90), 175);
+  } else if (name === "catfood") {
+    tone(620, 0.06, "triangle", 0.04, 820);
+    setTimeout(() => tone(480, 0.05, "sine", 0.03, 620), 60);
+  } else if (name === "meow") {
+    tone(520, 0.16, "sine", 0.045, 760);
+    setTimeout(() => tone(680, 0.12, "triangle", 0.035, 520), 120);
+  } else if (name === "scratch") {
+    tone(1180, 0.055, "sawtooth", 0.045, 520);
+    setTimeout(() => tone(960, 0.045, "square", 0.035, 420), 55);
   } else if (name === "zombie") {
     tone(128, 0.2, "sawtooth", 0.07, 82);
     setTimeout(() => tone(220, 0.12, "triangle", 0.045, 130), 120);
@@ -1648,6 +1658,39 @@ function drawTankTypeTrim(player) {
     ctx.moveTo(-22, -27);
     ctx.lineTo(19, -29);
     ctx.stroke();
+  } else if (type === "cat") {
+    const fur = ctx.createLinearGradient(-30, -32, 32, 8);
+    fur.addColorStop(0, "#ffe2a8");
+    fur.addColorStop(0.42, "#f1c27d");
+    fur.addColorStop(1, "#7a4a24");
+    ctx.fillStyle = fur;
+    roundRect(-31, -19, 62, 31, 9);
+    ctx.fill();
+    roundRect(-20, -33, 40, 23, 10);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-18, -31);
+    ctx.lineTo(-29, -47);
+    ctx.lineTo(-7, -35);
+    ctx.closePath();
+    ctx.moveTo(18, -31);
+    ctx.lineTo(29, -47);
+    ctx.lineTo(7, -35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(90, 53, 32, 0.72)";
+    ctx.lineWidth = 2.2;
+    [-1, 1].forEach((side) => {
+      ctx.beginPath();
+      ctx.moveTo(side * 4, -22);
+      ctx.lineTo(side * 24, -27);
+      ctx.moveTo(side * 3, -18);
+      ctx.lineTo(side * 25, -18);
+      ctx.stroke();
+    });
+    ctx.fillStyle = "rgba(90, 53, 32, 0.58)";
+    roundRect(-25, -14, 50, 5, 3);
+    ctx.fill();
   } else if (type === "super") {
     SUPER_MISSILE_COLORS.forEach((color, index) => {
       ctx.fillStyle = color;
@@ -1887,6 +1930,8 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 36, thickness: 7, tip: 6, accent: "#8fd0ff", fins: true });
   } else if (type === "orca") {
     drawBarrel(player, undefined, 0, { length: 31, thickness: 8, tip: 6, accent: "#69cce8" });
+  } else if (type === "cat") {
+    drawBarrel(player, undefined, 0, { length: 29, thickness: 9, tip: 7, accent: "#f1c27d" });
   } else if (type === "super") {
     [-12, -6, 0, 6, 12].forEach((offset, index) => {
       drawBarrel(player, undefined, offset, { length: 34, thickness: 3.6, tip: 4, accent: SUPER_MISSILE_COLORS[index], fins: true });
@@ -2006,6 +2051,7 @@ function projectileTrailColor(p) {
   if (p.tankType === "squid") return "rgba(20, 16, 22, 0.9)";
   if (p.tankType === "nuke") return "rgba(255, 48, 48, 0.9)";
   if (p.tankType === "orca") return "rgba(157, 234, 255, 0.88)";
+  if (p.tankType === "cat") return "rgba(255, 226, 168, 0.88)";
   if (p.tankType === "cheese") return "rgba(255, 216, 77, 0.92)";
   if (p.tankType === "zombie") return "rgba(111, 227, 111, 0.84)";
   if (p.tankType === "healing") return "rgba(143, 255, 232, 0.9)";
@@ -2534,6 +2580,25 @@ function drawSquidProjectile(p) {
   return true;
 }
 
+function drawCatFoodProjectile() {
+  ctx.fillStyle = "#ffe2a8";
+  ctx.beginPath();
+  ctx.ellipse(0, 3, 12, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7a4a24";
+  [-5, 0, 5].forEach((x) => {
+    ctx.beginPath();
+    ctx.arc(x, -2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.strokeStyle = "rgba(90, 53, 32, 0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 3, 12, 7, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  return true;
+}
+
 function drawProjectileAsset(p, meta, flightAngle) {
   const type = p.tankType || "normal";
   if (type === "red") {
@@ -2553,6 +2618,9 @@ function drawProjectileAsset(p, meta, flightAngle) {
   }
   if (type === "squid") {
     return drawSquidProjectile(p);
+  }
+  if (type === "cat") {
+    return drawCatFoodProjectile();
   }
   if (type === "nuke") {
     return drawNukeProjectile();
@@ -2683,6 +2751,69 @@ function drawOrcas() {
     ctx.fill();
     ctx.restore();
   });
+}
+
+function drawCat() {
+  const cat = latest?.cat;
+  if (!cat) return;
+  const dir = cat.dir === -1 ? -1 : 1;
+  const run = cat.running ? Math.sin((cat.age || 0) * 24) : Math.sin((cat.age || 0) * 5) * 0.25;
+  ctx.save();
+  ctx.translate(cat.x, cat.y - 8 + Math.abs(run) * 1.3);
+  ctx.scale(dir, 1);
+  ctx.fillStyle = "rgba(30, 22, 15, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(0, 14, 28, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const fur = ctx.createLinearGradient(-24, -11, 25, 9);
+  fur.addColorStop(0, "#ffe2a8");
+  fur.addColorStop(0.48, "#d89b5f");
+  fur.addColorStop(1, "#5a3520");
+  ctx.fillStyle = fur;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 26, 12, 0.04, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(21, -7, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(15, -13);
+  ctx.lineTo(11, -27);
+  ctx.lineTo(25, -17);
+  ctx.closePath();
+  ctx.moveTo(24, -14);
+  ctx.lineTo(31, -26);
+  ctx.lineTo(32, -10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#5a3520";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-23, -3);
+  ctx.quadraticCurveTo(-36, -20 - run * 3, -22, -25);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(90, 53, 32, 0.8)";
+  ctx.lineWidth = 2.4;
+  [-11, -1, 9, 18].forEach((x, index) => {
+    const foot = cat.running ? Math.sin((cat.age || 0) * 22 + index) * 5 : 0;
+    ctx.beginPath();
+    ctx.moveTo(x, 9);
+    ctx.lineTo(x + foot, 18);
+    ctx.stroke();
+  });
+  ctx.strokeStyle = "rgba(90, 53, 32, 0.72)";
+  ctx.lineWidth = 1.5;
+  [-1, 1].forEach((side) => {
+    ctx.beginPath();
+    ctx.moveTo(27, -4);
+    ctx.lineTo(40, -8 + side * 4);
+    ctx.moveTo(27, -1);
+    ctx.lineTo(40, -1 + side * 4);
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 
 function drawZombies() {
@@ -2881,6 +3012,36 @@ function drawEffects() {
         ctx.lineTo(tx + Math.cos(angle - 0.9) * 6, ty + Math.sin(angle - 0.9) * 6);
         ctx.closePath();
         ctx.fill();
+      }
+      ctx.restore();
+    } else if (effect.type === "cat-food") {
+      ctx.save();
+      const radius = 7 + (1 - fade) * 18;
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `rgba(255, 226, 168, ${0.42 * fade})`;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(122, 74, 36, ${0.95 * fade})`;
+      [-7, 0, 7].forEach((x) => {
+        ctx.beginPath();
+        ctx.arc(effect.x + x, effect.y + 2, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    } else if (effect.type === "cat-scratch") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(255, 226, 168, ${0.88 * fade})`;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      const dir = effect.dir === -1 ? -1 : 1;
+      for (let i = 0; i < 3; i += 1) {
+        const y = effect.y - 10 + i * 9;
+        ctx.beginPath();
+        ctx.moveTo(effect.x - dir * 20, y - 8);
+        ctx.lineTo(effect.x + dir * 20, y + 6);
+        ctx.stroke();
       }
       ctx.restore();
     } else if (effect.type === "cheese-stack") {
@@ -3144,6 +3305,7 @@ function render() {
     drawHealthBars();
     drawZombies();
     drawOrcas();
+    drawCat();
     latest.players.forEach(drawTank);
     drawShieldStates();
     drawMoveBars();
