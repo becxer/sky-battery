@@ -755,7 +755,7 @@ function updateSurrenderButton() {
   if (!resetButton) return;
   const vote = surrenderVoteState();
   const active = latest?.phase === "playing" && vote.count > 0;
-  resetButton.textContent = active ? `항복 ${vote.count}/${vote.needed}` : "항복";
+  resetButton.textContent = active ? `GG ${vote.count}/${vote.needed}` : "GG";
   resetButton.classList.toggle("vote-active", active);
   resetButton.title = active
     ? `Surrender vote ${vote.count} of ${vote.needed}`
@@ -3193,7 +3193,7 @@ function drawWinner() {
   ctx.textAlign = "center";
   ctx.fillText(`${latest.players[latest.winner].name} wins`, W / 2, H / 2);
   ctx.font = "600 22px system-ui, sans-serif";
-  ctx.fillText("항복 투표로 새 판 시작", W / 2, H / 2 + 42);
+  ctx.fillText("GG 투표로 새 판 시작", W / 2, H / 2 + 42);
 }
 
 function drawInGameHud() {
@@ -3251,7 +3251,7 @@ function drawInGameHud() {
 function drawSurrenderVoteBanner() {
   const vote = surrenderVoteState();
   if (!vote.active || vote.count <= 0) return;
-  const label = `항복 투표 ${vote.count}/${vote.needed}`;
+  const label = `GG 투표 ${vote.count}/${vote.needed}`;
   const sublabel = vote.count >= vote.needed ? "새 판 준비" : "과반수 필요";
   ctx.save();
   ctx.textAlign = "center";
