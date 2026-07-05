@@ -123,13 +123,11 @@ ORCA_MIN_SWIM_TIME = 0.12
 ORCA_SWIM_SPEED = 320
 ORCA_MAX_AGE = 2.2
 ORCA_MAX_COUNT = 4
-ORCA_STRUCTURE_DAMAGE_RADIUS = 24
-ORCA_STRUCTURE_DAMAGE_INTERVAL = 0.16
 CAT_RUN_SPEED = 430
 CAT_SCRATCH_DAMAGE = 17
 CAT_SCRATCH_RADIUS = 34
-CAT_STRUCTURE_DAMAGE_RADIUS = 22
-CAT_STRUCTURE_DAMAGE_INTERVAL = 0.14
+COMPANION_PROJECTILE_DAMAGE = 5
+COMPANION_PROJECTILE_RADIUS_MULTIPLIER = 0.62
 INK_MIN_DAMAGE = 3
 INK_TURNS = 1
 INK_DUMMY_SECONDS = 2.8
@@ -852,7 +850,6 @@ def ensure_shared_cat():
         "age": 0,
         "scratched": [],
         "meowTimer": 0,
-        "structureTimer": 0,
     }
     state["cat"] = cat
     return cat
@@ -872,7 +869,6 @@ def command_cat_to_food(x, y, owner=None):
     cat["owner"] = owner
     cat["scratched"] = []
     cat["meowTimer"] = 0.01
-    cat["structureTimer"] = 0
     state["effects"].append({
         "type": "cat-food",
         "x": target_x,
@@ -940,12 +936,6 @@ def update_cat(dt):
     if cat["meowTimer"] <= 0:
         sounds.append("meow")
         cat["meowTimer"] = 0.45
-    cat["structureTimer"] = cat.get("structureTimer", 0) - dt
-    if cat["structureTimer"] <= 0:
-        damage_platforms(cat["x"], cat["y"], CAT_STRUCTURE_DAMAGE_RADIUS)
-        cat["structureTimer"] = CAT_STRUCTURE_DAMAGE_INTERVAL
-        floor = supported_floor_y(cat["x"], cat["y"])
-        cat["y"] = floor - 6
 
     path_left = min(previous_x, cat["x"]) - CAT_SCRATCH_RADIUS
     path_right = max(previous_x, cat["x"]) + CAT_SCRATCH_RADIUS
@@ -2192,8 +2182,22 @@ def handle_zombie_impact(projectile, x, y, speed):
         sounds.append("damage")
 
 
-def handle_cat_food_impact(projectile, x, y):
-    damage_platforms(x, y, CAT_STRUCTURE_DAMAGE_RADIUS)
+def handle_companion_projectile_impact(projectile, x, y, speed):
+    explode(
+        x,
+        y,
+        speed,
+        1.0,
+        COMPANION_PROJECTILE_RADIUS_MULTIPLIER,
+        COMPANION_PROJECTILE_DAMAGE,
+        None,
+        projectile.get("owner"),
+        advance_turn=False,
+    )
+
+
+def handle_cat_food_impact(projectile, x, y, speed=0):
+    handle_companion_projectile_impact(projectile, x, y, speed)
     command_cat_to_food(x, y, projectile.get("owner"))
 
 
@@ -2211,7 +2215,6 @@ def closest_orca_target(owner, x, y, radius):
 
 
 def bite_orca_target(orca, target):
-    damage_platforms(orca["x"], orca["y"], ORCA_STRUCTURE_DAMAGE_RADIUS)
     state["effects"].append({
         "type": "orca-bite",
         "x": target["x"],
@@ -2236,9 +2239,9 @@ def bite_orca_target(orca, target):
         sounds.append("retire")
 
 
-def handle_orca_landing(projectile, x, y):
+def handle_orca_landing(projectile, x, y, speed=0):
     owner = projectile.get("owner")
-    damage_platforms(x, y, ORCA_STRUCTURE_DAMAGE_RADIUS)
+    handle_companion_projectile_impact(projectile, x, y, speed)
     target_index = closest_orca_target(owner, x, y, ORCA_SEEK_RADIUS)
     if target_index is None:
         return False
@@ -2252,7 +2255,6 @@ def handle_orca_landing(projectile, x, y):
         "owner": owner,
         "dir": -1 if target["x"] < x else 1,
         "age": 0,
-        "structureTimer": 0,
     }])[-ORCA_MAX_COUNT:]
     sounds.append("orca")
     return True
@@ -2297,12 +2299,6 @@ def update_orcas(dt):
         orca["x"] = clamp(orca["x"] + step, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
         floor = supported_floor_y(orca["x"], orca.get("y") - TANK_GROUND_OFFSET) - 5
         orca["y"] += (floor - orca["y"]) * 0.62
-        orca["structureTimer"] = orca.get("structureTimer", 0) - dt
-        if orca["structureTimer"] <= 0:
-            damage_platforms(orca["x"], orca["y"], ORCA_STRUCTURE_DAMAGE_RADIUS)
-            orca["structureTimer"] = ORCA_STRUCTURE_DAMAGE_INTERVAL
-            floor = supported_floor_y(orca["x"], orca.get("y") - TANK_GROUND_OFFSET) - 5
-            orca["y"] += (floor - orca["y"]) * 0.62
 
         reach = max(0, math.hypot(target["x"] - orca["x"], target["y"] - orca["y"]) - tank_hit_radius(target))
         if orca["age"] >= ORCA_MIN_SWIM_TIME and reach <= ORCA_ATTACH_RANGE:
@@ -2557,10 +2553,10 @@ def projectile_player_direct_hit(projectile, speed):
             handle_zombie_impact(projectile, projectile["x"], projectile["y"], speed + 18)
             return True
         if projectile.get("orca"):
-            handle_orca_landing(projectile, projectile["x"], projectile["y"])
+            handle_orca_landing(projectile, projectile["x"], projectile["y"], speed + 18)
             return True
         if projectile.get("effect") == "catfood":
-            handle_cat_food_impact(projectile, projectile["x"], projectile["y"])
+            handle_cat_food_impact(projectile, projectile["x"], projectile["y"], speed + 18)
             return True
         if projectile.get("plane"):
             handle_plane_crash(projectile, projectile["x"], projectile["y"], speed + 18)
@@ -2631,12 +2627,13 @@ def update_projectiles(dt):
             zombie_index, zombie_x, zombie_y = zombie_hit
             impact_speed = speed + 10
             if p.get("effect") == "catfood":
-                handle_cat_food_impact(p, zombie_x, zombie_y)
+                handle_cat_food_impact(p, zombie_x, zombie_y, impact_speed)
             elif p.get("orca"):
                 if 0 <= zombie_index < len(state.get("zombies", [])):
                     state["zombies"].pop(zombie_index)
                 sounds.append("zombiedie")
                 sounds.append("orca")
+                handle_companion_projectile_impact(p, zombie_x, zombie_y, impact_speed)
             elif p.get("plane"):
                 if 0 <= zombie_index < len(state.get("zombies", [])):
                     state["zombies"].pop(zombie_index)
@@ -2690,11 +2687,11 @@ def update_projectiles(dt):
                 exploded = True
                 continue
             if p.get("orca"):
-                handle_orca_landing(p, hit_x, hit_y)
+                handle_orca_landing(p, hit_x, hit_y, speed)
                 exploded = True
                 continue
             if p.get("effect") == "catfood":
-                handle_cat_food_impact(p, hit_x, hit_y)
+                handle_cat_food_impact(p, hit_x, hit_y, speed)
                 exploded = True
                 continue
             if p.get("bouncy") and p.get("bounces", 0) < p.get("maxBounces", 0):
