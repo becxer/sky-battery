@@ -123,9 +123,13 @@ ORCA_MIN_SWIM_TIME = 0.12
 ORCA_SWIM_SPEED = 320
 ORCA_MAX_AGE = 2.2
 ORCA_MAX_COUNT = 4
+ORCA_STRUCTURE_DAMAGE_RADIUS = 24
+ORCA_STRUCTURE_DAMAGE_INTERVAL = 0.16
 CAT_RUN_SPEED = 430
 CAT_SCRATCH_DAMAGE = 17
 CAT_SCRATCH_RADIUS = 34
+CAT_STRUCTURE_DAMAGE_RADIUS = 22
+CAT_STRUCTURE_DAMAGE_INTERVAL = 0.14
 INK_MIN_DAMAGE = 3
 INK_TURNS = 1
 INK_DUMMY_SECONDS = 2.8
@@ -848,6 +852,7 @@ def ensure_shared_cat():
         "age": 0,
         "scratched": [],
         "meowTimer": 0,
+        "structureTimer": 0,
     }
     state["cat"] = cat
     return cat
@@ -867,6 +872,7 @@ def command_cat_to_food(x, y, owner=None):
     cat["owner"] = owner
     cat["scratched"] = []
     cat["meowTimer"] = 0.01
+    cat["structureTimer"] = 0
     state["effects"].append({
         "type": "cat-food",
         "x": target_x,
@@ -934,6 +940,12 @@ def update_cat(dt):
     if cat["meowTimer"] <= 0:
         sounds.append("meow")
         cat["meowTimer"] = 0.45
+    cat["structureTimer"] = cat.get("structureTimer", 0) - dt
+    if cat["structureTimer"] <= 0:
+        damage_platforms(cat["x"], cat["y"], CAT_STRUCTURE_DAMAGE_RADIUS)
+        cat["structureTimer"] = CAT_STRUCTURE_DAMAGE_INTERVAL
+        floor = supported_floor_y(cat["x"], cat["y"])
+        cat["y"] = floor - 6
 
     path_left = min(previous_x, cat["x"]) - CAT_SCRATCH_RADIUS
     path_right = max(previous_x, cat["x"]) + CAT_SCRATCH_RADIUS
@@ -2029,6 +2041,12 @@ def handle_boing_terrain_impact(projectile, x, y):
     start_y = player["y"]
     landing_x = clamp(x, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
     landing_floor = supported_floor_y(landing_x, y)
+    landing_platform_y = platform_y_at(landing_x)
+    landed_on_structure = (
+        landing_platform_y is not None
+        and abs(landing_platform_y - landing_floor) <= 10
+        and landing_platform_y < terrain_y(landing_x) - MIN_PLATFORM_AIR_GAP
+    )
     player["x"] = landing_x
     player["y"] = landing_floor - TANK_GROUND_OFFSET
     player["vx"] = clamp(projectile.get("vx", 0) * 0.04, -90, 90)
@@ -2042,6 +2060,7 @@ def handle_boing_terrain_impact(projectile, x, y):
         "y1": start_y - 14,
         "x2": player["x"],
         "y2": player["y"] - 14,
+        "structure": landed_on_structure,
         "life": 24,
         "maxLife": 24,
     })
@@ -2174,6 +2193,7 @@ def handle_zombie_impact(projectile, x, y, speed):
 
 
 def handle_cat_food_impact(projectile, x, y):
+    damage_platforms(x, y, CAT_STRUCTURE_DAMAGE_RADIUS)
     command_cat_to_food(x, y, projectile.get("owner"))
 
 
@@ -2191,6 +2211,7 @@ def closest_orca_target(owner, x, y, radius):
 
 
 def bite_orca_target(orca, target):
+    damage_platforms(orca["x"], orca["y"], ORCA_STRUCTURE_DAMAGE_RADIUS)
     state["effects"].append({
         "type": "orca-bite",
         "x": target["x"],
@@ -2217,6 +2238,7 @@ def bite_orca_target(orca, target):
 
 def handle_orca_landing(projectile, x, y):
     owner = projectile.get("owner")
+    damage_platforms(x, y, ORCA_STRUCTURE_DAMAGE_RADIUS)
     target_index = closest_orca_target(owner, x, y, ORCA_SEEK_RADIUS)
     if target_index is None:
         return False
@@ -2230,6 +2252,7 @@ def handle_orca_landing(projectile, x, y):
         "owner": owner,
         "dir": -1 if target["x"] < x else 1,
         "age": 0,
+        "structureTimer": 0,
     }])[-ORCA_MAX_COUNT:]
     sounds.append("orca")
     return True
@@ -2274,6 +2297,12 @@ def update_orcas(dt):
         orca["x"] = clamp(orca["x"] + step, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
         floor = supported_floor_y(orca["x"], orca.get("y") - TANK_GROUND_OFFSET) - 5
         orca["y"] += (floor - orca["y"]) * 0.62
+        orca["structureTimer"] = orca.get("structureTimer", 0) - dt
+        if orca["structureTimer"] <= 0:
+            damage_platforms(orca["x"], orca["y"], ORCA_STRUCTURE_DAMAGE_RADIUS)
+            orca["structureTimer"] = ORCA_STRUCTURE_DAMAGE_INTERVAL
+            floor = supported_floor_y(orca["x"], orca.get("y") - TANK_GROUND_OFFSET) - 5
+            orca["y"] += (floor - orca["y"]) * 0.62
 
         reach = max(0, math.hypot(target["x"] - orca["x"], target["y"] - orca["y"]) - tank_hit_radius(target))
         if orca["age"] >= ORCA_MIN_SWIM_TIME and reach <= ORCA_ATTACH_RANGE:

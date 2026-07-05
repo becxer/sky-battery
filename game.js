@@ -3120,6 +3120,29 @@ function drawEffects() {
         ctx.arc(effect.x2, effect.y2, radius, 0, Math.PI * 2);
         ctx.stroke();
       }
+      if (effect.structure) {
+        const labelX = effect.x2;
+        const labelY = effect.y2 - 42 - (1 - fade) * 12;
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = `rgba(15, 11, 34, ${0.78 * fade})`;
+        roundRect(labelX - 27, labelY - 15, 54, 28, 8);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255, 242, 166, ${0.9 * fade})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.font = "900 16px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = `rgba(255, 244, 188, ${fade})`;
+        ctx.fillText("점프", labelX, labelY);
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = `rgba(255, 244, 188, ${0.75 * fade})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(labelX, labelY + 18);
+        ctx.lineTo(labelX, effect.y2 - 8);
+        ctx.stroke();
+      }
       ctx.restore();
     }
   });
