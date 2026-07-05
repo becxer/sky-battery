@@ -28,6 +28,7 @@ const tankDescription = document.getElementById("tankDescription");
 const W = canvas.width;
 const H = canvas.height;
 const TANK_SCALE = 0.5;
+const CAT_DRAW_SCALE = 0.56;
 const STRIP_PLATFORM_EXTRA = 8;
 const ISLAND_PLATFORM_EXTRA = 5;
 const AIM_MIN = 5;
@@ -2759,8 +2760,8 @@ function drawCat() {
   const dir = cat.dir === -1 ? -1 : 1;
   const run = cat.running ? Math.sin((cat.age || 0) * 24) : Math.sin((cat.age || 0) * 5) * 0.25;
   ctx.save();
-  ctx.translate(cat.x, cat.y - 8 + Math.abs(run) * 1.3);
-  ctx.scale(dir, 1);
+  ctx.translate(cat.x, cat.y - 4 + Math.abs(run) * 0.8);
+  ctx.scale(dir * CAT_DRAW_SCALE, CAT_DRAW_SCALE);
   ctx.fillStyle = "rgba(30, 22, 15, 0.28)";
   ctx.beginPath();
   ctx.ellipse(0, 14, 28, 5, 0, 0, Math.PI * 2);
