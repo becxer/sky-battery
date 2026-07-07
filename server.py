@@ -10,7 +10,7 @@ import time
 
 ROOT = Path(__file__).parent
 W = 1200
-H = 540
+H = 600
 MIN_PLAYERS = 1
 MAX_PLAYERS = 6
 DEFAULT_PLAYER_COUNT = 3

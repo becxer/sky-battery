@@ -6,7 +6,7 @@ Sky Battery is a local Wi-Fi browser artillery game developed by Eugene Back and
 
 ![Sky Battery gameplay screen](docs/sky-battery-gameplay.png)
 
-Sky Battery uses a wide 20:9 battlefield with destructible terrain, floating platforms, wind, turn-based movement, and touch-friendly fire controls.
+Sky Battery uses a wide 2:1 battlefield with destructible terrain, floating platforms, wind, turn-based movement, and touch-friendly fire controls.
 
 ## Requirements
 

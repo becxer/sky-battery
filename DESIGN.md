@@ -8,7 +8,7 @@ Sky Battery is a same-Wi-Fi, browser-based artillery game inspired by classic tu
 
 `server.py` is the single source of truth. It serves static files, owns all gameplay state, and exposes JSON endpoints such as `/join`, `/input`, `/move`, `/fire`, `/steer`, `/boost`, `/reset`, `/host/start`, and `/host/recreate`. It also streams state to clients through `/events` using Server-Sent Events.
 
-`game.js` is a renderer and input client. It draws the 1200x540 canvas at a 20:9 ratio, handles mobile pointer controls and keyboard controls, plays generated audio cues, and posts user intent to the server. The client should never independently decide projectile collisions, damage, terrain removal, or turn order.
+`game.js` is a renderer and input client. It draws the 1200x600 canvas at a 2:1 ratio, handles mobile pointer controls and keyboard controls, plays generated audio cues, and posts user intent to the server. The client should never independently decide projectile collisions, damage, terrain removal, or turn order.
 
 ## World And Terrain
 
