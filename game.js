@@ -113,7 +113,6 @@ let isSpaceCharging = false;
 let isSpaceCruiseBoosting = false;
 let moveHoldTimer = null;
 let moveHoldDirection = 0;
-let projectileVisuals = new Map();
 const camera = {
   x: 0,
   y: 0,
@@ -424,90 +423,6 @@ function handleWorldState() {
 function currentProjectiles() {
   if (latest?.projectiles?.length) return latest.projectiles;
   return latest?.projectile ? [latest.projectile] : [];
-}
-
-function projectileVisualKey(projectile, index) {
-  return [
-    projectile.owner ?? "x",
-    projectile.tankType || projectile.effect || "normal",
-    projectile.shotIndex ?? index,
-    projectile.cheeseLevel ?? 0,
-    projectile.superballLevel ?? 0,
-    projectile.superballMass ?? 1,
-    projectile.bounces ?? 0,
-  ].join(":");
-}
-
-function angleDelta(target, current) {
-  let delta = target - current;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  while (delta < -Math.PI) delta += Math.PI * 2;
-  return delta;
-}
-
-function updateProjectileVisuals(dt) {
-  const rawProjectiles = currentProjectiles();
-  if (!latest || !rawProjectiles.length) {
-    projectileVisuals.clear();
-    return;
-  }
-
-  const nextVisuals = new Map();
-  rawProjectiles.forEach((projectile, index) => {
-    const key = projectileVisualKey(projectile, index);
-    const existing = projectileVisuals.get(key);
-    const vx = Number(projectile.vx) || 0;
-    const vy = Number(projectile.vy) || 0;
-    const targetX = Number(projectile.x) || 0;
-    const targetY = Number(projectile.y) || 0;
-    const targetAngle = Number.isFinite(projectile.angle)
-      ? projectile.angle
-      : Math.atan2(vy, vx || 1);
-
-    if (!existing) {
-      nextVisuals.set(key, {
-        ...projectile,
-        x: targetX,
-        y: targetY,
-        angle: targetAngle,
-        visualKey: key,
-      });
-      return;
-    }
-
-    let x = existing.x + vx * dt;
-    let y = existing.y + vy * dt;
-    const error = Math.hypot(targetX - x, targetY - y);
-    if (error > 90) {
-      x = targetX;
-      y = targetY;
-    } else {
-      const correction = 1 - Math.exp(-dt * 14);
-      x += (targetX - x) * correction;
-      y += (targetY - y) * correction;
-    }
-
-    const angleBlend = 1 - Math.exp(-dt * 16);
-    const currentAngle = Number.isFinite(existing.angle) ? existing.angle : targetAngle;
-    const angle = currentAngle + angleDelta(targetAngle, currentAngle) * angleBlend;
-    nextVisuals.set(key, {
-      ...projectile,
-      x,
-      y,
-      angle,
-      visualKey: key,
-    });
-  });
-  projectileVisuals = nextVisuals;
-}
-
-function visualProjectiles() {
-  const rawProjectiles = currentProjectiles();
-  if (!rawProjectiles.length) return [];
-  return rawProjectiles.map((projectile, index) => {
-    const key = projectileVisualKey(projectile, index);
-    return projectileVisuals.get(key) || projectile;
-  });
 }
 
 function activeCruiseProjectile() {
@@ -903,7 +818,7 @@ function cameraProjectilesForTarget(projectiles) {
 }
 
 function actionCameraTarget() {
-  const projectiles = visualProjectiles();
+  const projectiles = currentProjectiles();
   if (projectiles.length) {
     const cameraProjectiles = cameraProjectilesForTarget(projectiles);
     if (cameraProjectiles.length) {
@@ -2244,7 +2159,7 @@ function drawBarrel(player, barrel, offset = 0, options = {}) {
 }
 
 function drawProjectile() {
-  visualProjectiles().forEach(drawOneProjectile);
+  currentProjectiles().forEach(drawOneProjectile);
 }
 
 function hexToRgba(hex, alpha) {
@@ -3658,7 +3573,6 @@ function render() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - lastRenderTime) / 1000);
   lastRenderTime = now;
-  updateProjectileVisuals(dt);
   updateCamera(dt);
   if (latest) {
     drawCameraWorld(() => {
