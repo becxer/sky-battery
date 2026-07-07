@@ -805,11 +805,17 @@ function cameraProjectilesForTarget(projectiles) {
   const ownedPlaneMissiles = currentOwned.filter((projectile) => projectile.planeMissile || projectile.tankType === "planeMissile");
   if (ownedPlaneMissiles.length) return ownedPlaneMissiles;
 
+  const ownedActivePlanes = currentOwned.filter((projectile) => projectile.plane && !projectile.planeDropped);
+  if (ownedActivePlanes.length) return ownedActivePlanes;
+
   const ownedNonPlane = currentOwned.filter((projectile) => !projectile.plane && projectile.tankType !== "plane");
   if (ownedNonPlane.length) return ownedNonPlane;
 
   const anyPlaneMissiles = projectiles.filter((projectile) => projectile.planeMissile || projectile.tankType === "planeMissile");
   if (anyPlaneMissiles.length) return anyPlaneMissiles;
+
+  const anyActivePlanes = projectiles.filter((projectile) => projectile.plane && !projectile.planeDropped);
+  if (anyActivePlanes.length) return anyActivePlanes;
 
   const anyNonPlane = projectiles.filter((projectile) => !projectile.plane && projectile.tankType !== "plane");
   if (anyNonPlane.length) return anyNonPlane;
