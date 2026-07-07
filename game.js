@@ -773,8 +773,8 @@ function updateSurrenderButton() {
 function desiredCameraZoom() {
   const rect = canvas.getBoundingClientRect();
   const displayHeight = rect?.height || H;
-  const smallScreenBoost = clamp((420 - displayHeight) / 420, 0, 1) * 0.22;
-  return clamp(1.9 + smallScreenBoost, 1.9, 2.12);
+  const smallScreenBoost = clamp((420 - displayHeight) / 420, 0, 1) * 0.16;
+  return clamp(1.62 + smallScreenBoost, 1.62, 1.78);
 }
 
 function boundsTarget(points, screenY = 0.48, speed = 8.5) {
