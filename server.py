@@ -15,6 +15,8 @@ MIN_PLAYERS = 1
 MAX_PLAYERS = 6
 DEFAULT_PLAYER_COUNT = 3
 PLAYER_COUNT = DEFAULT_PLAYER_COUNT
+SERVER_TICK_RATE = 60
+BROADCAST_RATE = 60
 TANK_GROUND_OFFSET = 7
 TANK_EDGE_MARGIN = 20
 TANK_FIRE_DISTANCE = 19
@@ -68,6 +70,9 @@ EXPLOSION_MAX_RADIUS = 28
 EXPLOSION_SPEED_SCALE = 0.014
 EXPLOSION_PLATFORM_SCALE = 1.08
 EXPLOSION_DAMAGE_SCALE = 1.32
+EXPLOSION_PARTICLE_SPEED = 1.75
+EXPLOSION_PARTICLE_LIFE_SCALE = 0.62
+EXPLOSION_PARTICLE_GRAVITY = 0.16
 HOMING_LOCK_RADIUS = 260
 HOMING_DESCENT_MIN_VY = 80
 HOMING_TURN_RATE = math.radians(320)
@@ -1928,19 +1933,19 @@ def explode(x, y, impact_speed, damage_multiplier=1.0, radius_multiplier=1.0, ba
 
     if not is_ink:
         particle_scale = clamp(radius / EXPLOSION_MAX_RADIUS, 0.5, 3.0)
-        particle_count = round(36 * clamp(particle_scale, 0.7, 2.4))
-        particle_life = round(28 + particle_scale * 10)
+        particle_count = round(42 * clamp(particle_scale, 0.7, 2.4))
+        particle_life = round((24 + particle_scale * 7) * EXPLOSION_PARTICLE_LIFE_SCALE)
         for _ in range(particle_count):
-            speed = (random.random() * 3.6 + 0.9) * (0.78 + particle_scale * 0.24)
+            speed = (random.random() * 4.4 + 1.4) * (0.84 + particle_scale * 0.28) * EXPLOSION_PARTICLE_SPEED
             angle = random.random() * math.pi * 2
             state["particles"].append({
                 "x": x,
                 "y": y,
                 "vx": math.cos(angle) * speed,
-                "vy": math.sin(angle) * speed - 0.9,
+                "vy": math.sin(angle) * speed - 1.35,
                 "life": particle_life,
                 "maxLife": particle_life,
-                "size": (random.random() * 2.4 + 1.2) * (0.78 + particle_scale * 0.28),
+                "size": (random.random() * 2.7 + 1.35) * (0.78 + particle_scale * 0.28),
             })
 
     sounds.append("ink" if is_ink else "explode")
@@ -2734,7 +2739,7 @@ def update_particles():
     for p in state["particles"]:
         p["x"] += p["vx"]
         p["y"] += p["vy"]
-        p["vy"] += 0.1
+        p["vy"] += EXPLOSION_PARTICLE_GRAVITY
         p["life"] -= 1
         if p["life"] > 0:
             next_particles.append(p)
@@ -2798,26 +2803,35 @@ def broadcast():
 
 def game_loop():
     last_broadcast = 0
+    tick_dt = 1 / SERVER_TICK_RATE
+    broadcast_every_tick = BROADCAST_RATE >= SERVER_TICK_RATE
+    broadcast_dt = 1 / BROADCAST_RATE if not broadcast_every_tick else 0
+    next_tick = time.perf_counter()
     while True:
-        time.sleep(1 / 60)
+        next_tick += tick_dt
         with lock:
             if state["phase"] == "playing" and state["winner"] is None:
                 for player in state["players"]:
-                    update_player(player, 1 / 60)
-                update_dummy_ink_timers(1 / 60)
-                update_dummy_respawns(1 / 60)
-                update_zombies(1 / 60)
-                update_projectiles(1 / 60)
-                update_orcas(1 / 60)
-                update_cat(1 / 60)
+                    update_player(player, tick_dt)
+                update_dummy_ink_timers(tick_dt)
+                update_dummy_respawns(tick_dt)
+                update_zombies(tick_dt)
+                update_projectiles(tick_dt)
+                update_orcas(tick_dt)
+                update_cat(tick_dt)
             if state["phase"] == "playing":
                 maybe_reset_from_surrender_votes()
             update_particles()
             update_effects()
-            now = time.time()
-            if now - last_broadcast > 1 / 30:
+            now = time.perf_counter()
+            if broadcast_every_tick or now - last_broadcast >= broadcast_dt:
                 broadcast()
                 last_broadcast = now
+        sleep_for = next_tick - time.perf_counter()
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+        else:
+            next_tick = time.perf_counter()
 
 
 class Handler(SimpleHTTPRequestHandler):

@@ -113,6 +113,15 @@ let isSpaceCharging = false;
 let isSpaceCruiseBoosting = false;
 let moveHoldTimer = null;
 let moveHoldDirection = 0;
+let projectileVisuals = new Map();
+const camera = {
+  x: 0,
+  y: 0,
+  zoom: 1,
+  focusX: 0,
+  focusY: 0,
+  initialized: false,
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -415,6 +424,90 @@ function handleWorldState() {
 function currentProjectiles() {
   if (latest?.projectiles?.length) return latest.projectiles;
   return latest?.projectile ? [latest.projectile] : [];
+}
+
+function projectileVisualKey(projectile, index) {
+  return [
+    projectile.owner ?? "x",
+    projectile.tankType || projectile.effect || "normal",
+    projectile.shotIndex ?? index,
+    projectile.cheeseLevel ?? 0,
+    projectile.superballLevel ?? 0,
+    projectile.superballMass ?? 1,
+    projectile.bounces ?? 0,
+  ].join(":");
+}
+
+function angleDelta(target, current) {
+  let delta = target - current;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
+
+function updateProjectileVisuals(dt) {
+  const rawProjectiles = currentProjectiles();
+  if (!latest || !rawProjectiles.length) {
+    projectileVisuals.clear();
+    return;
+  }
+
+  const nextVisuals = new Map();
+  rawProjectiles.forEach((projectile, index) => {
+    const key = projectileVisualKey(projectile, index);
+    const existing = projectileVisuals.get(key);
+    const vx = Number(projectile.vx) || 0;
+    const vy = Number(projectile.vy) || 0;
+    const targetX = Number(projectile.x) || 0;
+    const targetY = Number(projectile.y) || 0;
+    const targetAngle = Number.isFinite(projectile.angle)
+      ? projectile.angle
+      : Math.atan2(vy, vx || 1);
+
+    if (!existing) {
+      nextVisuals.set(key, {
+        ...projectile,
+        x: targetX,
+        y: targetY,
+        angle: targetAngle,
+        visualKey: key,
+      });
+      return;
+    }
+
+    let x = existing.x + vx * dt;
+    let y = existing.y + vy * dt;
+    const error = Math.hypot(targetX - x, targetY - y);
+    if (error > 90) {
+      x = targetX;
+      y = targetY;
+    } else {
+      const correction = 1 - Math.exp(-dt * 14);
+      x += (targetX - x) * correction;
+      y += (targetY - y) * correction;
+    }
+
+    const angleBlend = 1 - Math.exp(-dt * 16);
+    const currentAngle = Number.isFinite(existing.angle) ? existing.angle : targetAngle;
+    const angle = currentAngle + angleDelta(targetAngle, currentAngle) * angleBlend;
+    nextVisuals.set(key, {
+      ...projectile,
+      x,
+      y,
+      angle,
+      visualKey: key,
+    });
+  });
+  projectileVisuals = nextVisuals;
+}
+
+function visualProjectiles() {
+  const rawProjectiles = currentProjectiles();
+  if (!rawProjectiles.length) return [];
+  return rawProjectiles.map((projectile, index) => {
+    const key = projectileVisualKey(projectile, index);
+    return projectileVisuals.get(key) || projectile;
+  });
 }
 
 function activeCruiseProjectile() {
@@ -762,10 +855,155 @@ function updateSurrenderButton() {
     : "Vote to surrender and reset the world";
 }
 
-function drawSky() {
-  const now = performance.now();
-  const dt = Math.min(0.05, (now - lastRenderTime) / 1000);
-  lastRenderTime = now;
+function desiredCameraZoom() {
+  const rect = canvas.getBoundingClientRect();
+  const displayHeight = rect?.height || H;
+  const smallScreenBoost = clamp((420 - displayHeight) / 420, 0, 1) * 0.22;
+  return clamp(1.9 + smallScreenBoost, 1.9, 2.12);
+}
+
+function boundsTarget(points, screenY = 0.48, speed = 8.5) {
+  const valid = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (!valid.length) return null;
+  let minX = valid[0].x;
+  let maxX = valid[0].x;
+  let minY = valid[0].y;
+  let maxY = valid[0].y;
+  valid.forEach((point) => {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  });
+  return {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+    screenX: 0.5,
+    screenY,
+    speed,
+    focusSpeed: speed,
+  };
+}
+
+function cameraProjectilesForTarget(projectiles) {
+  const currentOwned = projectiles.filter((projectile) => projectile.owner === latest?.current);
+  const ownedPlaneMissiles = currentOwned.filter((projectile) => projectile.planeMissile || projectile.tankType === "planeMissile");
+  if (ownedPlaneMissiles.length) return ownedPlaneMissiles;
+
+  const ownedNonPlane = currentOwned.filter((projectile) => !projectile.plane && projectile.tankType !== "plane");
+  if (ownedNonPlane.length) return ownedNonPlane;
+
+  const anyPlaneMissiles = projectiles.filter((projectile) => projectile.planeMissile || projectile.tankType === "planeMissile");
+  if (anyPlaneMissiles.length) return anyPlaneMissiles;
+
+  const anyNonPlane = projectiles.filter((projectile) => !projectile.plane && projectile.tankType !== "plane");
+  if (anyNonPlane.length) return anyNonPlane;
+
+  return [];
+}
+
+function actionCameraTarget() {
+  const projectiles = visualProjectiles();
+  if (projectiles.length) {
+    const cameraProjectiles = cameraProjectilesForTarget(projectiles);
+    if (cameraProjectiles.length) {
+      const target = boundsTarget(cameraProjectiles, 0.46, 8.4);
+      if (target) target.focusSpeed = 13;
+      return target;
+    }
+  }
+  if (latest?.orcas?.length) {
+    const target = boundsTarget(latest.orcas, 0.56, 7.2);
+    if (target) target.focusSpeed = 8.5;
+    return target;
+  }
+  if (latest?.cat?.running) {
+    return {
+      x: latest.cat.x,
+      y: latest.cat.y,
+      screenX: 0.5,
+      screenY: 0.58,
+      speed: 7.2,
+      focusSpeed: 8.5,
+    };
+  }
+  const effectPoints = (latest?.effects || []).flatMap((effect) => {
+    const points = [];
+    if (Number.isFinite(effect.x) && Number.isFinite(effect.y)) {
+      points.push({ x: effect.x, y: effect.y });
+    }
+    if (Number.isFinite(effect.x2) && Number.isFinite(effect.y2)) {
+      points.push({ x: effect.x2, y: effect.y2 });
+    }
+    return points;
+  });
+  const particlePoints = (latest?.particles || [])
+    .filter((particle) => particle.life > 8)
+    .map((particle) => ({ x: particle.x, y: particle.y }));
+  if (effectPoints.length || particlePoints.length) {
+    const target = boundsTarget([...effectPoints, ...particlePoints], 0.5, 6.2);
+    if (target) target.focusSpeed = 7.4;
+    return target;
+  }
+  return null;
+}
+
+function playerCameraTarget() {
+  const current = latest?.players?.[latest?.current];
+  if (!current) {
+    return { x: W / 2, y: H / 2, screenX: 0.5, screenY: 0.55, speed: 4.2 };
+  }
+  return {
+    x: current.x,
+    y: current.y - 8,
+    screenX: 0.5,
+    screenY: 0.66,
+    speed: 4.8,
+    focusSpeed: 7.5,
+  };
+}
+
+function cameraFocusTarget() {
+  if (!latest || latest.phase !== "playing") {
+    return { x: W / 2, y: H / 2, screenX: 0.5, screenY: 0.55, speed: 4.2 };
+  }
+  return actionCameraTarget() || playerCameraTarget();
+}
+
+function updateCamera(dt) {
+  if (!latest) {
+    camera.initialized = false;
+    return;
+  }
+  const target = cameraFocusTarget();
+  const zoomTarget = desiredCameraZoom();
+  const speed = target.speed || 5;
+  const blend = camera.initialized ? 1 - Math.exp(-dt * speed) : 1;
+  const focusBlend = camera.initialized ? 1 - Math.exp(-dt * (target.focusSpeed || speed)) : 1;
+  camera.focusX += (target.x - camera.focusX) * focusBlend;
+  camera.focusY += (target.y - camera.focusY) * focusBlend;
+  camera.zoom += (zoomTarget - camera.zoom) * blend;
+  const viewW = W / camera.zoom;
+  const viewH = H / camera.zoom;
+  const maxX = Math.max(0, W - viewW);
+  const maxY = Math.max(0, H - viewH);
+  const desiredX = clamp(camera.focusX - viewW * (target.screenX ?? 0.5), 0, maxX);
+  const desiredY = clamp(camera.focusY - viewH * (target.screenY ?? 0.5), 0, maxY);
+  camera.x += (desiredX - camera.x) * blend;
+  camera.y += (desiredY - camera.y) * blend;
+  camera.x = clamp(camera.x, 0, maxX);
+  camera.y = clamp(camera.y, 0, maxY);
+  camera.initialized = true;
+}
+
+function drawCameraWorld(callback) {
+  ctx.save();
+  ctx.setTransform(camera.zoom, 0, 0, camera.zoom, -camera.x * camera.zoom, -camera.y * camera.zoom);
+  callback();
+  ctx.restore();
+}
+
+function drawSky(dt = 0) {
   cloudOffset = (cloudOffset + (latest?.wind || 0) * 38 * dt) % W;
 
   const sky = ctx.createLinearGradient(0, 0, 0, H);
@@ -2006,10 +2244,7 @@ function drawBarrel(player, barrel, offset = 0, options = {}) {
 }
 
 function drawProjectile() {
-  const projectiles = latest?.projectiles?.length
-    ? latest.projectiles
-    : latest?.projectile ? [latest.projectile] : [];
-  projectiles.forEach(drawOneProjectile);
+  visualProjectiles().forEach(drawOneProjectile);
 }
 
 function hexToRgba(hex, alpha) {
@@ -3196,6 +3431,105 @@ function drawWinner() {
   ctx.fillText("GG 투표로 새 판 시작", W / 2, H / 2 + 42);
 }
 
+function drawMiniMap() {
+  if (!latest || latest.phase !== "playing") return;
+  const width = 206;
+  const height = 92;
+  const x = 14;
+  const y = 102;
+  const pad = 7;
+  const innerW = width - pad * 2;
+  const innerH = height - pad * 2;
+  const sx = innerW / W;
+  const sy = innerH / H;
+  const mx = (worldX) => x + pad + worldX * sx;
+  const my = (worldY) => y + pad + worldY * sy;
+
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  ctx.fillStyle = "rgba(5, 10, 16, 0.28)";
+  roundRect(x, y, width, height, 8);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(220, 240, 255, 0.34)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  roundRect(x + pad, y + pad, innerW, innerH, 5);
+  ctx.clip();
+  const ground = latest.ground || [];
+  ctx.fillStyle = "rgba(72, 140, 72, 0.34)";
+  ctx.beginPath();
+  ctx.moveTo(mx(0), my(H));
+  for (let worldX = 0; worldX < W; worldX += 8) {
+    ctx.lineTo(mx(worldX), my(ground[worldX] ?? H));
+  }
+  ctx.lineTo(mx(W), my(H));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(214, 244, 176, 0.44)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let worldX = 0; worldX < W; worldX += 12) {
+    const py = my(ground[worldX] ?? H);
+    if (worldX === 0) ctx.moveTo(mx(worldX), py);
+    else ctx.lineTo(mx(worldX), py);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255, 219, 138, 0.5)";
+  ctx.lineWidth = 2;
+  (latest.platforms || []).forEach((platform) => {
+    if (platform.type === "thin") {
+      ctx.beginPath();
+      ctx.moveTo(mx(platform.x), my(platform.y));
+      ctx.lineTo(mx(platform.x + platform.w), my(platform.y));
+      ctx.stroke();
+    } else if (platform.type === "steps") {
+      platform.steps.forEach((step) => {
+        ctx.beginPath();
+        ctx.moveTo(mx(step.x), my(step.y));
+        ctx.lineTo(mx(step.x + step.w), my(step.y));
+        ctx.stroke();
+      });
+    } else if (platform.type === "island" && platform.points?.length) {
+      ctx.beginPath();
+      platform.points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(mx(point[0]), my(point[1]));
+        else ctx.lineTo(mx(point[0]), my(point[1]));
+      });
+      ctx.stroke();
+    }
+  });
+
+  const viewW = W / camera.zoom;
+  const viewH = H / camera.zoom;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.72)";
+  ctx.lineWidth = 1.25;
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(mx(camera.x), my(camera.y), viewW * sx, viewH * sy);
+  ctx.setLineDash([]);
+
+  const myIndex = seat >= 0 && seat < latest.players.length && !latest.players[seat]?.isDummy
+    ? seat
+    : latest.current;
+  latest.players.forEach((player, index) => {
+    if (player.health <= 0) return;
+    const mine = index === myIndex && !player.isDummy;
+    const radius = mine ? 4.2 : 3.4;
+    ctx.fillStyle = mine ? "#39ff14" : "#ff3030";
+    ctx.shadowColor = mine ? "rgba(57, 255, 20, 0.95)" : "rgba(255, 48, 48, 0.92)";
+    ctx.shadowBlur = mine ? 9 : 6;
+    ctx.beginPath();
+    ctx.arc(mx(player.x), my(player.y - 10), radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(4, 6, 8, 0.75)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
 function drawInGameHud() {
   if (!latest) return;
   if (latest.phase === "setup") {
@@ -3321,30 +3655,39 @@ function drawInkOverlay() {
 }
 
 function render() {
-  drawSky();
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastRenderTime) / 1000);
+  lastRenderTime = now;
+  updateProjectileVisuals(dt);
+  updateCamera(dt);
   if (latest) {
-    drawTerrain();
-    drawPlatforms();
-    drawNukeMarks();
-    drawHealthBars();
-    drawZombies();
-    drawOrcas();
-    drawCat();
-    latest.players.forEach(drawTank);
-    drawShieldStates();
-    drawMoveBars();
-    latest.players.forEach(drawNameTag);
-    drawCheeseStacks();
-    drawPoopStacks();
-    drawInkStatuses();
-    drawProjectile();
-    drawEffects();
-    drawParticles();
+    drawCameraWorld(() => {
+      drawSky(dt);
+      drawTerrain();
+      drawPlatforms();
+      drawNukeMarks();
+      drawHealthBars();
+      drawZombies();
+      drawOrcas();
+      drawCat();
+      latest.players.forEach(drawTank);
+      drawShieldStates();
+      drawMoveBars();
+      latest.players.forEach(drawNameTag);
+      drawCheeseStacks();
+      drawPoopStacks();
+      drawInkStatuses();
+      drawProjectile();
+      drawEffects();
+      drawParticles();
+    });
+    drawMiniMap();
     drawInGameHud();
     drawSurrenderVoteBanner();
     drawWinner();
     drawInkOverlay();
   } else {
+    drawSky(dt);
     ctx.fillStyle = "rgba(255,255,255,0.8)";
     ctx.font = "700 32px system-ui, sans-serif";
     ctx.textAlign = "center";
