@@ -1265,6 +1265,7 @@ state = {
     "skyMode": random_sky_mode(),
     "winner": None,
     "tick": 0,
+    "projectileSeq": 0,
 }
 state["platformGround"] = state["ground"][:]
 state["platforms"] = install_platforms(build_platforms(state["ground"]))
@@ -1300,6 +1301,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["skyMode"] = random_sky_mode()
     state["winner"] = None
     state["phase"] = phase
+    state["projectileSeq"] = 0
     state["worldVersion"] += 1
     sounds.append("join")
 
@@ -1316,6 +1318,7 @@ def recreate_world():
     state["nukeMarks"] = []
     state["surrenderVotes"] = {}
     state["winner"] = None
+    state["projectileSeq"] = 0
     state["worldVersion"] += 1
     sounds.append("join")
 
@@ -1323,6 +1326,11 @@ def recreate_world():
 def apply_solo_tank_choice(seat, tank_type):
     if player_count() == 1 and seat == 0 and tank_type in TANK_TYPES:
         set_player_tank_type(state["players"][0], tank_type)
+
+
+def next_projectile_id():
+    state["projectileSeq"] += 1
+    return f"{state['worldVersion']}-{state['projectileSeq']}"
 
 
 def assign_seat(client_id, name, tank_type=None):
@@ -1538,6 +1546,7 @@ def fire_for(client_id):
         offset_y = math.cos(angle) * barrel_offset
         projectile_power = power * (CRUISE_SPEED_SCALE if spec.get("cruise") else 1.0)
         projectiles.append({
+            "id": next_projectile_id(),
             "x": player["x"] + math.cos(angle) * TANK_FIRE_DISTANCE + offset_x,
             "y": player["y"] - TANK_MUZZLE_Y + math.sin(angle) * TANK_FIRE_DISTANCE + offset_y,
             "vx": math.cos(angle) * projectile_power + player["vx"] * 0.25,
@@ -1638,6 +1647,7 @@ def drop_plane_missiles(projectile):
         x = projectile["x"] + direction * offset * PLANE_MISSILE_SPACING
         y = projectile["y"] + 9 + abs(offset) * 2
         missiles.append({
+            "id": next_projectile_id(),
             "x": x,
             "y": y,
             "vx": math.cos(angle) * PLANE_MISSILE_SPEED + projectile.get("vx", 0) * 0.14,
@@ -1649,6 +1659,7 @@ def drop_plane_missiles(projectile):
             "launchX": projectile.get("launchX", projectile["x"]),
             "launchY": projectile.get("launchY", projectile["y"]),
             "tankType": "planeMissile",
+            "shotIndex": index,
             "damageMultiplier": 1.0,
             "baseDamage": PLANE_MISSILE_DAMAGE,
             "radiusMultiplier": PLANE_MISSILE_RADIUS,
@@ -2438,6 +2449,7 @@ def split_cheese_projectile(p):
         child["vy"] = math.sin(angle) * speed - (18 if level == 0 else 8)
         child["angle"] = angle
         child["av"] = side * (0.32 + level * 0.1)
+        child["id"] = next_projectile_id()
         child["cheeseLevel"] = level + 1
         child["nextSplitAge"] = p.get("age", 0) + CHEESE_SPLIT_INTERVAL
         child["shotIndex"] = int(p.get("shotIndex", 0)) * 2 + child_index
@@ -2468,6 +2480,7 @@ def split_superball_projectile(p):
         child["vy"] = math.sin(angle) * speed - (12 if level == 0 else 5)
         child["angle"] = angle
         child["av"] = side * (0.22 + level * 0.08)
+        child["id"] = next_projectile_id()
         child["superballLevel"] = level + 1
         child["superballMass"] = 1
         child["nextSuperballSplitAge"] = p.get("age", 0) + SUPERBALL_SPLIT_INTERVAL

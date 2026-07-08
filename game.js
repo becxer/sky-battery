@@ -29,6 +29,8 @@ const W = canvas.width;
 const H = canvas.height;
 const TANK_SCALE = 0.5;
 const CAT_DRAW_SCALE = 0.56;
+const LOCAL_PROJECTILE_GRAVITY = 1600;
+const LOCAL_WIND_FORCE = 42;
 const STRIP_PLATFORM_EXTRA = 8;
 const ISLAND_PLATFORM_EXTRA = 5;
 const AIM_MIN = 5;
@@ -113,6 +115,7 @@ let isSpaceCharging = false;
 let isSpaceCruiseBoosting = false;
 let moveHoldTimer = null;
 let moveHoldDirection = 0;
+let localProjectileVisuals = new Map();
 const camera = {
   x: 0,
   y: 0,
@@ -423,6 +426,99 @@ function handleWorldState() {
 function currentProjectiles() {
   if (latest?.projectiles?.length) return latest.projectiles;
   return latest?.projectile ? [latest.projectile] : [];
+}
+
+function projectileVisualKey(projectile, index) {
+  if (projectile.id) return String(projectile.id);
+  return [
+    projectile.owner ?? "x",
+    projectile.tankType || projectile.effect || "normal",
+    projectile.shotIndex ?? index,
+    projectile.cheeseLevel ?? 0,
+    projectile.superballLevel ?? 0,
+    projectile.superballMass ?? 1,
+    projectile.bounces ?? 0,
+  ].join(":");
+}
+
+function canLocallySimulateProjectile(projectile) {
+  if (!projectile) return false;
+  if (projectile.homing || projectile.cruise || projectile.plane || projectile.bouncy) return false;
+  if (projectile.cheese || projectile.superball || projectile.zombie || projectile.orca || projectile.boing) return false;
+  if (projectile.effect === "catfood") return false;
+  if (projectile.tankType === "super" || projectile.tankType === "missile" || projectile.tankType === "chain") return false;
+  return Number.isFinite(projectile.x) && Number.isFinite(projectile.y);
+}
+
+function createLocalProjectileVisual(projectile, key) {
+  return {
+    ...projectile,
+    x: Number(projectile.x) || 0,
+    y: Number(projectile.y) || 0,
+    vx: Number(projectile.vx) || 0,
+    vy: Number(projectile.vy) || 0,
+    angle: Number(projectile.angle) || 0,
+    age: Number(projectile.age) || 0,
+    visualKey: key,
+    localSimulated: true,
+  };
+}
+
+function syncLocalProjectileMetadata(visual, projectile, key) {
+  const kinematics = {
+    x: visual.x,
+    y: visual.y,
+    vx: visual.vx,
+    vy: visual.vy,
+    angle: visual.angle,
+    age: visual.age,
+  };
+  Object.assign(visual, projectile, kinematics, {
+    visualKey: key,
+    localSimulated: true,
+  });
+  return visual;
+}
+
+function stepLocalProjectileVisual(projectile, dt) {
+  let remaining = Math.min(dt, 0.05);
+  while (remaining > 0) {
+    const step = Math.min(remaining, 1 / 120);
+    projectile.vx += (latest?.wind || 0) * LOCAL_WIND_FORCE * step;
+    projectile.vy += LOCAL_PROJECTILE_GRAVITY * step;
+    projectile.x += projectile.vx * step;
+    projectile.y += projectile.vy * step;
+    projectile.angle += (projectile.av || 0) * step * 10;
+    projectile.age += step;
+    remaining -= step;
+  }
+}
+
+function updateLocalProjectileVisuals(dt) {
+  const rawProjectiles = currentProjectiles();
+  if (!latest || !rawProjectiles.length) {
+    localProjectileVisuals.clear();
+    return;
+  }
+
+  const nextVisuals = new Map();
+  rawProjectiles.forEach((projectile, index) => {
+    if (!canLocallySimulateProjectile(projectile)) return;
+    const key = projectileVisualKey(projectile, index);
+    const visual = localProjectileVisuals.has(key)
+      ? syncLocalProjectileMetadata(localProjectileVisuals.get(key), projectile, key)
+      : createLocalProjectileVisual(projectile, key);
+    stepLocalProjectileVisual(visual, dt);
+    nextVisuals.set(key, visual);
+  });
+  localProjectileVisuals = nextVisuals;
+}
+
+function displayProjectiles() {
+  return currentProjectiles().map((projectile, index) => {
+    if (!canLocallySimulateProjectile(projectile)) return projectile;
+    return localProjectileVisuals.get(projectileVisualKey(projectile, index)) || projectile;
+  });
 }
 
 function activeCruiseProjectile() {
@@ -824,7 +920,7 @@ function cameraProjectilesForTarget(projectiles) {
 }
 
 function actionCameraTarget() {
-  const projectiles = currentProjectiles();
+  const projectiles = displayProjectiles();
   if (projectiles.length) {
     const cameraProjectiles = cameraProjectilesForTarget(projectiles);
     if (cameraProjectiles.length) {
@@ -2165,7 +2261,7 @@ function drawBarrel(player, barrel, offset = 0, options = {}) {
 }
 
 function drawProjectile() {
-  currentProjectiles().forEach(drawOneProjectile);
+  displayProjectiles().forEach(drawOneProjectile);
 }
 
 function hexToRgba(hex, alpha) {
@@ -3579,6 +3675,7 @@ function render() {
   const now = performance.now();
   const dt = Math.min(0.05, (now - lastRenderTime) / 1000);
   lastRenderTime = now;
+  updateLocalProjectileVisuals(dt);
   updateCamera(dt);
   if (latest) {
     drawCameraWorld(() => {
