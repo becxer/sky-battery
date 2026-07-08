@@ -444,9 +444,9 @@ function projectileVisualKey(projectile, index) {
 function canLocallySimulateProjectile(projectile) {
   if (!projectile) return false;
   if (projectile.homing || projectile.cruise || projectile.plane || projectile.bouncy) return false;
-  if (projectile.cheese || projectile.superball || projectile.zombie || projectile.orca || projectile.boing) return false;
+  if (projectile.cheese || projectile.superball || projectile.zombie || projectile.orca || projectile.boing || projectile.butt) return false;
   if (projectile.effect === "catfood") return false;
-  if (projectile.tankType === "super" || projectile.tankType === "missile" || projectile.tankType === "chain") return false;
+  if (projectile.tankType === "super" || projectile.tankType === "missile" || projectile.tankType === "chain" || projectile.tankType === "poopdrop") return false;
   return Number.isFinite(projectile.x) && Number.isFinite(projectile.y);
 }
 
