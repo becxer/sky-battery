@@ -34,6 +34,7 @@ Mobile controls sit over the bottom of the game: left/right triangle buttons, a 
 - `cruise`: launches a steerable missile; left/right steer and Space/Fire lifts it during flight.
 - `cheese`: fires cheese that splits from one piece to two, four, then eight pieces.
 - `zombie`: throws a stone; impact or graze spawns a zombie near the target tank, which follows and taps damage until hit once.
+- `f1`: fires a checkered flag, then the tank races to that point and damages tanks crossed along the route.
 - `super`: rare rainbow five-shot homing multi-missile tank.
 
 ## Reproduction Steps

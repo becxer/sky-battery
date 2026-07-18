@@ -131,6 +131,8 @@ ORCA_MAX_COUNT = 4
 CAT_RUN_SPEED = 430
 CAT_SCRATCH_DAMAGE = 17
 CAT_SCRATCH_RADIUS = 34
+F1_RUN_SPEED = 560
+F1_HIT_RADIUS = 36
 COMPANION_PROJECTILE_DAMAGE = 5
 COMPANION_PROJECTILE_RADIUS_MULTIPLIER = 0.62
 INK_MIN_DAMAGE = 3
@@ -161,6 +163,7 @@ TANK_TYPES = {
     "plane": {"label": "Plane", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "plane": True},
     "orca": {"label": "Orca", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "orca": True},
     "cat": {"label": "Cat", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "effect": "catfood", "cat": True},
+    "f1": {"label": "F1", "damage": 0.0, "radius": 0.0, "shots": [0], "barrels": [0], "effect": "f1flag", "f1": True},
     "cheese": {"label": "Cheese", "damage": 0.57, "radius": 0.58, "shots": [0], "barrels": [0], "cheese": True, "effect": "cheese"},
     "zombie": {"label": "Zombie", "damage": 0.16, "radius": 0.9, "shots": [0], "barrels": [0], "zombie": True},
     "healing": {"label": "Healing", "damage": 0.8, "radius": 0.9, "shots": [0], "barrels": [0], "effect": "heal"},
@@ -920,7 +923,7 @@ def update_cat(dt):
     was_running = cat_is_running()
     cat = ensure_shared_cat()
     if not cat:
-        if was_running and not state.get("projectiles") and not state.get("orcas") and state["winner"] is None:
+        if was_running and not state.get("projectiles") and not state.get("orcas") and not f1_is_running() and state["winner"] is None:
             resolve_shot_end()
         return
     cat["age"] = cat.get("age", 0) + dt
@@ -958,8 +961,133 @@ def update_cat(dt):
         cat["y"] = cat.get("targetY", cat["y"])
         cat["running"] = False
         cat["scratched"] = []
-        if not state.get("projectiles") and not state.get("orcas") and state["winner"] is None:
+        if not state.get("projectiles") and not state.get("orcas") and not f1_is_running() and state["winner"] is None:
             resolve_shot_end()
+
+
+def f1_is_running():
+    return bool(state.get("f1Runs"))
+
+
+def hit_player_with_f1(index, run):
+    player = state["players"][index]
+    if player["health"] <= 0:
+        return
+    direction = run.get("dir", 1)
+    if shield_blocks_attack(player):
+        return
+    player["health"] = max(0, player["health"] - CAT_SCRATCH_DAMAGE)
+    player["vx"] += direction * 105
+    player["vy"] -= 42
+    player["av"] += direction * 0.24
+    state["effects"].append({
+        "type": "f1-hit",
+        "x": player["x"],
+        "y": player["y"] - 16 * tank_size_multiplier(player),
+        "dir": direction,
+        "life": 18,
+        "maxLife": 18,
+    })
+    sounds.append("damage")
+    if player["health"] <= 0:
+        sounds.append("retire")
+
+
+def start_f1_run(projectile, x, y):
+    owner = projectile.get("owner")
+    if owner not in range(len(state["players"])):
+        return False
+    player = state["players"][owner]
+    if player["health"] <= 0:
+        return False
+    target_x = clamp(x, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+    target_floor = supported_floor_y(target_x, y)
+    target_y = target_floor - TANK_GROUND_OFFSET
+    direction = 1 if target_x >= player["x"] else -1
+    run = {
+        "owner": owner,
+        "x": player["x"],
+        "y": player["y"],
+        "targetX": target_x,
+        "targetY": target_y,
+        "dir": direction,
+        "age": 0,
+        "hit": [],
+    }
+    state["f1Runs"].append(run)
+    state["effects"].append({
+        "type": "f1-flag",
+        "x": target_x,
+        "y": target_floor - 18,
+        "dir": direction,
+        "life": 48,
+        "maxLife": 48,
+    })
+    sounds.append("f1")
+    return True
+
+
+def handle_f1_flag_impact(projectile, x, y, speed=0):
+    start_f1_run(projectile, x, y)
+
+
+def update_f1_runs(dt):
+    was_running = f1_is_running()
+    next_runs = []
+    for run in state.get("f1Runs", []):
+        owner = run.get("owner")
+        if owner not in range(len(state["players"])):
+            continue
+        player = state["players"][owner]
+        if player["health"] <= 0:
+            continue
+
+        run["age"] = run.get("age", 0) + dt
+        previous_x = player["x"]
+        target_x = run.get("targetX", player["x"])
+        direction = 1 if target_x >= player["x"] else -1
+        run["dir"] = direction
+        step = min(abs(target_x - player["x"]), F1_RUN_SPEED * dt)
+        player["x"] = clamp(player["x"] + direction * step, TANK_EDGE_MARGIN, W - TANK_EDGE_MARGIN)
+        floor = supported_floor_y(player["x"], player["y"])
+        player["y"] = floor - TANK_GROUND_OFFSET
+        player["dir"] = direction
+        player["vx"] = 0
+        player["vy"] = 0
+        player["angleBody"] = ground_angle_at(player["x"], player["y"])
+        run["x"] = player["x"]
+        run["y"] = player["y"]
+
+        path_left = min(previous_x, player["x"]) - F1_HIT_RADIUS
+        path_right = max(previous_x, player["x"]) + F1_HIT_RADIUS
+        hit = set(run.get("hit", []))
+        for index, target in enumerate(state["players"]):
+            if index == owner or index in hit or target["health"] <= 0:
+                continue
+            vertical_gap = abs((target["y"] - 10) - player["y"])
+            if path_left <= target["x"] <= path_right and vertical_gap <= F1_HIT_RADIUS + tank_hit_radius(target) * 0.35:
+                hit_player_with_f1(index, run)
+                hit.add(index)
+        run["hit"] = sorted(hit)
+
+        if abs(target_x - player["x"]) <= 0.5:
+            player["x"] = target_x
+            player["y"] = run.get("targetY", player["y"])
+            player["angleBody"] = ground_angle_at(player["x"], player["y"])
+            state["effects"].append({
+                "type": "f1-finish",
+                "x": player["x"],
+                "y": player["y"] - 14,
+                "dir": direction,
+                "life": 18,
+                "maxLife": 18,
+            })
+            continue
+        next_runs.append(run)
+
+    state["f1Runs"] = next_runs[:MAX_PLAYERS]
+    if was_running and not state["f1Runs"] and not state.get("projectiles") and not state.get("orcas") and not cat_is_running() and state["winner"] is None:
+        resolve_shot_end()
 
 
 def sync_projectile_field():
@@ -968,7 +1096,7 @@ def sync_projectile_field():
 
 
 def active_projectiles():
-    return bool(state.get("projectiles") or state.get("projectile") or state.get("orcas") or cat_is_running())
+    return bool(state.get("projectiles") or state.get("projectile") or state.get("orcas") or cat_is_running() or f1_is_running())
 
 
 def set_projectiles(projectiles):
@@ -1259,6 +1387,7 @@ state = {
     "zombies": [],
     "orcas": [],
     "cat": None,
+    "f1Runs": [],
     "nukeMarks": [],
     "surrenderVotes": {},
     "wind": 0,
@@ -1295,6 +1424,7 @@ def reset_game(count=None, kick_clients=False, phase="playing"):
     state["zombies"] = []
     state["orcas"] = []
     state["cat"] = None
+    state["f1Runs"] = []
     state["nukeMarks"] = []
     state["surrenderVotes"] = {}
     state["wind"] = round(random.uniform(-2.8, 2.8), 2)
@@ -1315,6 +1445,7 @@ def recreate_world():
     state["zombies"] = []
     state["orcas"] = []
     state["cat"] = None
+    state["f1Runs"] = []
     state["nukeMarks"] = []
     state["surrenderVotes"] = {}
     state["winner"] = None
@@ -1585,6 +1716,7 @@ def fire_for(client_id):
             "butt": bool(spec.get("butt")),
             "buttDropped": False,
             "boing": bool(spec.get("boing")),
+            "f1": bool(spec.get("f1")),
             "superball": bool(spec.get("superball")),
             "superballLevel": 0,
             "superballMaxLevel": SUPERBALL_MAX_SPLIT_LEVEL if spec.get("superball") else 0,
@@ -2323,7 +2455,7 @@ def update_orcas(dt):
         next_orcas.append(orca)
 
     state["orcas"] = next_orcas[:ORCA_MAX_COUNT]
-    if not state["orcas"] and not state.get("projectiles") and state["winner"] is None:
+    if not state["orcas"] and not state.get("projectiles") and not cat_is_running() and not f1_is_running() and state["winner"] is None:
         resolve_shot_end()
 
 
@@ -2553,7 +2685,7 @@ def projectile_player_direct_hit(projectile, speed):
     for index, player in enumerate(state["players"]):
         if player["health"] <= 0:
             continue
-        if projectile.get("orca") and index == projectile.get("owner"):
+        if (projectile.get("orca") or projectile.get("f1")) and index == projectile.get("owner"):
             continue
         contact_radius = tank_hit_radius(player)
         if projectile.get("zombie") and index != projectile.get("owner"):
@@ -2572,6 +2704,9 @@ def projectile_player_direct_hit(projectile, speed):
             return True
         if projectile.get("orca"):
             handle_orca_landing(projectile, projectile["x"], projectile["y"], speed + 18)
+            return True
+        if projectile.get("f1"):
+            handle_f1_flag_impact(projectile, projectile["x"], projectile["y"], speed + 18)
             return True
         if projectile.get("effect") == "catfood":
             handle_cat_food_impact(projectile, projectile["x"], projectile["y"], speed + 18)
@@ -2644,7 +2779,9 @@ def update_projectiles(dt):
         if zombie_hit is not None:
             zombie_index, zombie_x, zombie_y = zombie_hit
             impact_speed = speed + 10
-            if p.get("effect") == "catfood":
+            if p.get("f1"):
+                handle_f1_flag_impact(p, zombie_x, zombie_y, impact_speed)
+            elif p.get("effect") == "catfood":
                 handle_cat_food_impact(p, zombie_x, zombie_y, impact_speed)
             elif p.get("orca"):
                 if 0 <= zombie_index < len(state.get("zombies", [])):
@@ -2708,6 +2845,10 @@ def update_projectiles(dt):
                 handle_orca_landing(p, hit_x, hit_y, speed)
                 exploded = True
                 continue
+            if p.get("f1"):
+                handle_f1_flag_impact(p, hit_x, hit_y, speed)
+                exploded = True
+                continue
             if p.get("effect") == "catfood":
                 handle_cat_food_impact(p, hit_x, hit_y, speed)
                 exploded = True
@@ -2743,7 +2884,7 @@ def update_projectiles(dt):
 
     survivors = merge_superballs(survivors)
     set_projectiles(survivors)
-    if not survivors and state["winner"] is None and not state.get("orcas") and not cat_is_running():
+    if not survivors and state["winner"] is None and not state.get("orcas") and not cat_is_running() and not f1_is_running():
         resolve_shot_end()
 
 
@@ -2792,6 +2933,7 @@ def snapshot():
         "zombies": state.get("zombies", []),
         "orcas": state.get("orcas", []),
         "cat": state.get("cat"),
+        "f1Runs": state.get("f1Runs", []),
         "nukeMarks": state.get("nukeMarks", []),
         "surrenderVote": surrender_vote_info(),
         "wind": state["wind"],
@@ -2832,6 +2974,7 @@ def game_loop():
                 update_projectiles(tick_dt)
                 update_orcas(tick_dt)
                 update_cat(tick_dt)
+                update_f1_runs(tick_dt)
             if state["phase"] == "playing":
                 maybe_reset_from_surrender_votes()
             update_particles()

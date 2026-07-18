@@ -56,6 +56,7 @@ const TANK_TYPE_META = {
   poop: { label: "P", name: "똥탱크", desc: "똥 스택을 쌓아 이동력을 줄이고 피해를 키웁니다.", color: "#8b5a2b", shell: "#7a4a24", glow: "#d59b55" },
   squid: { label: "SQ", name: "오징어탱크", desc: "먹물을 맞은 상대의 다음 턴 화면을 검은 얼룩으로 가립니다.", color: "#3b255f", shell: "#151015", glow: "#8d6bff" },
   cat: { label: "CAT", name: "고양이탱크", desc: "먹이가 작게 터진 뒤 공유 고양이가 달려가며 경로의 탱크를 할큅니다.", color: "#f1c27d", shell: "#5a3520", glow: "#ffe2a8" },
+  f1: { label: "F1", name: "F1 탱크", desc: "체커기를 쏜 위치로 질주하며 경로의 탱크에 고양이와 같은 피해를 줍니다.", color: "#eef3f8", shell: "#101820", glow: "#ff3030" },
   nuke: { label: "X", name: "핵폭탄 탱크", desc: "첫 탄으로 표식을 남기고 같은 곳을 다시 맞추면 대폭발.", color: "#ff3030", shell: "#ff3030", glow: "#ffd15c" },
   cruise: { label: "V", name: "순항미사일", desc: "비행 중 Fire/Space로 상승시키는 느린 미사일.", color: "#72a7ff", shell: "#72a7ff", glow: "#c7e2ff" },
   plane: { label: "PL", name: "비행기탱크", desc: "작고 빠르게 직선 비행하며 Fire/Space로 미사일 3발을 떨굽니다.", color: "#8fd0ff", shell: "#d7f3ff", glow: "#ffffff" },
@@ -289,6 +290,10 @@ function playSound(name) {
   } else if (name === "catfood") {
     tone(620, 0.06, "triangle", 0.04, 820);
     setTimeout(() => tone(480, 0.05, "sine", 0.03, 620), 60);
+  } else if (name === "f1") {
+    tone(180, 0.08, "sawtooth", 0.05, 360);
+    setTimeout(() => tone(260, 0.12, "square", 0.04, 520), 70);
+    setTimeout(() => tone(420, 0.16, "sawtooth", 0.035, 720), 150);
   } else if (name === "meow") {
     tone(520, 0.16, "sine", 0.045, 760);
     setTimeout(() => tone(680, 0.12, "triangle", 0.035, 520), 120);
@@ -444,9 +449,9 @@ function projectileVisualKey(projectile, index) {
 function canLocallySimulateProjectile(projectile) {
   if (!projectile) return false;
   if (projectile.homing || projectile.cruise || projectile.plane || projectile.bouncy) return false;
-  if (projectile.cheese || projectile.superball || projectile.zombie || projectile.orca || projectile.boing || projectile.butt) return false;
-  if (projectile.effect === "catfood") return false;
-  if (projectile.tankType === "super" || projectile.tankType === "missile" || projectile.tankType === "chain" || projectile.tankType === "poopdrop") return false;
+  if (projectile.cheese || projectile.superball || projectile.zombie || projectile.orca || projectile.boing || projectile.butt || projectile.f1) return false;
+  if (projectile.effect === "catfood" || projectile.effect === "f1flag") return false;
+  if (projectile.tankType === "super" || projectile.tankType === "missile" || projectile.tankType === "chain" || projectile.tankType === "poopdrop" || projectile.tankType === "f1") return false;
   return Number.isFinite(projectile.x) && Number.isFinite(projectile.y);
 }
 
@@ -1947,6 +1952,42 @@ function drawTankTypeTrim(player) {
     ctx.fillStyle = "rgba(90, 53, 32, 0.58)";
     roundRect(-25, -14, 50, 5, 3);
     ctx.fill();
+  } else if (type === "f1") {
+    const body = ctx.createLinearGradient(-34, -30, 34, 1);
+    body.addColorStop(0, "#f7fbff");
+    body.addColorStop(0.48, "#ff3030");
+    body.addColorStop(1, "#101820");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(-34, -10);
+    ctx.lineTo(-23, -27);
+    ctx.lineTo(14, -30);
+    ctx.lineTo(35, -15);
+    ctx.lineTo(24, -7);
+    ctx.lineTo(-31, -7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#101820";
+    [-21, 20].forEach((x) => {
+      ctx.beginPath();
+      ctx.arc(x, -7, 6.2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "#f4fbff";
+    [-21, 20].forEach((x) => {
+      ctx.beginPath();
+      ctx.arc(x, -7, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.fillStyle = "rgba(244, 251, 255, 0.95)";
+    roundRect(-5, -31, 21, 7, 3);
+    ctx.fill();
+    ctx.fillStyle = "#101820";
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = 0; col < 4; col += 1) {
+        if ((row + col) % 2 === 0) ctx.fillRect(-30 + col * 6, -24 + row * 5, 6, 5);
+      }
+    }
   } else if (type === "super") {
     SUPER_MISSILE_COLORS.forEach((color, index) => {
       ctx.fillStyle = color;
@@ -2188,6 +2229,8 @@ function drawTankBarrels(player) {
     drawBarrel(player, undefined, 0, { length: 31, thickness: 8, tip: 6, accent: "#69cce8" });
   } else if (type === "cat") {
     drawBarrel(player, undefined, 0, { length: 29, thickness: 9, tip: 7, accent: "#f1c27d" });
+  } else if (type === "f1") {
+    drawBarrel(player, undefined, 0, { length: 33, thickness: 6, tip: 5, accent: "#111820" });
   } else if (type === "super") {
     [-12, -6, 0, 6, 12].forEach((offset, index) => {
       drawBarrel(player, undefined, offset, { length: 34, thickness: 3.6, tip: 4, accent: SUPER_MISSILE_COLORS[index], fins: true });
@@ -2305,6 +2348,7 @@ function projectileTrailColor(p) {
   if (p.tankType === "nuke") return "rgba(255, 48, 48, 0.9)";
   if (p.tankType === "orca") return "rgba(157, 234, 255, 0.88)";
   if (p.tankType === "cat") return "rgba(255, 226, 168, 0.88)";
+  if (p.tankType === "f1") return "rgba(245, 245, 245, 0.88)";
   if (p.tankType === "cheese") return "rgba(255, 216, 77, 0.92)";
   if (p.tankType === "zombie") return "rgba(111, 227, 111, 0.84)";
   if (p.tankType === "healing") return "rgba(143, 255, 232, 0.9)";
@@ -2852,6 +2896,27 @@ function drawCatFoodProjectile() {
   return true;
 }
 
+function drawF1FlagProjectile() {
+  ctx.strokeStyle = "#111820";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-8, 10);
+  ctx.lineTo(-8, -15);
+  ctx.stroke();
+  const size = 6;
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      ctx.fillStyle = (row + col) % 2 === 0 ? "#f7f7f7" : "#101820";
+      ctx.fillRect(-8 + col * size, -15 + row * size, size, size);
+    }
+  }
+  ctx.strokeStyle = "rgba(255, 48, 48, 0.82)";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(-8, -15, size * 4, size * 3);
+  return true;
+}
+
 function drawProjectileAsset(p, meta, flightAngle) {
   const type = p.tankType || "normal";
   if (type === "red") {
@@ -2874,6 +2939,9 @@ function drawProjectileAsset(p, meta, flightAngle) {
   }
   if (type === "cat") {
     return drawCatFoodProjectile();
+  }
+  if (type === "f1") {
+    return drawF1FlagProjectile();
   }
   if (type === "nuke") {
     return drawNukeProjectile();
@@ -2940,7 +3008,7 @@ function drawOneProjectile(p) {
   trail.addColorStop(0, "rgba(255, 215, 120, 0)");
   trail.addColorStop(1, projectileTrailColor(p));
   ctx.strokeStyle = trail;
-  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise" || p.tankType === "heart" || p.tankType === "superball" || p.tankType === "orca" || p.tankType === "plane" || p.tankType === "planeMissile") ? Math.max(1, 2 * visualScale) : 3;
+  ctx.lineWidth = p.tankType === "red" ? 4 : (p.tankType === "missile" || p.tankType === "super" || p.tankType === "cruise" || p.tankType === "heart" || p.tankType === "superball" || p.tankType === "orca" || p.tankType === "f1" || p.tankType === "plane" || p.tankType === "planeMissile") ? Math.max(1, 2 * visualScale) : 3;
   ctx.beginPath();
   ctx.moveTo(tailX, tailY);
   ctx.lineTo(p.x, p.y);
@@ -3201,6 +3269,51 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    } else if (effect.type === "f1-flag") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const pole = 24 * fade;
+      ctx.strokeStyle = `rgba(255, 48, 48, ${0.85 * fade})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(effect.x, effect.y + 12);
+      ctx.lineTo(effect.x, effect.y - pole);
+      ctx.stroke();
+      const cell = 5.5;
+      for (let row = 0; row < 3; row += 1) {
+        for (let col = 0; col < 4; col += 1) {
+          ctx.fillStyle = (row + col) % 2 === 0 ? `rgba(255,255,255,${fade})` : `rgba(12,18,26,${fade})`;
+          ctx.fillRect(effect.x + col * cell, effect.y - pole + row * cell, cell, cell);
+        }
+      }
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.55 * fade})`;
+      ctx.beginPath();
+      ctx.arc(effect.x, effect.y + 12, 10 + (1 - fade) * 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (effect.type === "f1-hit" || effect.type === "f1-finish") {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const dir = effect.dir === -1 ? -1 : 1;
+      ctx.strokeStyle = `rgba(255, 48, 48, ${0.8 * fade})`;
+      ctx.lineWidth = effect.type === "f1-finish" ? 3.2 : 4.2;
+      ctx.lineCap = "round";
+      for (let i = 0; i < 4; i += 1) {
+        const y = effect.y + i * 7 - 11;
+        const length = 20 + i * 5 + (1 - fade) * 16;
+        ctx.beginPath();
+        ctx.moveTo(effect.x - dir * length, y);
+        ctx.lineTo(effect.x + dir * 8, y - dir * 1.5);
+        ctx.stroke();
+      }
+      if (effect.type === "f1-finish") {
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.7 * fade})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 12 + (1 - fade) * 24, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
     } else if (effect.type === "heal") {
       ctx.save();

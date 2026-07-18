@@ -194,6 +194,7 @@ Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 | Plane Tank / 비행기탱크 | Launches a small, fast, straight-flying plane; pressing Fire or Space once drops three 15-degree missiles while the plane can keep flying or crash-explode. |
 | Orca Tank / 범고래탱크 | Fires a tail-flapping orca from a glass tank; its landing makes a small blast, then it swims along the ground and bites once for about 70% normal damage. |
 | Cat Tank / 고양이탱크 | Shares one field cat among all cat tanks; food shots make a small blast, then call the cat to run there and scratch every tank along its path. |
+| F1 Tank / F1 탱크 | Fires a checkered flag, then races to that location and damages tanks it collides with for cat-scratch damage. |
 | Cheese Tank / 치즈 탱크 | Cheese projectile splits repeatedly; hit tanks gain cheese stacks, grow visibly larger, and become easier to hit. |
 | Zombie Tank / 좀비 탱크 | Throws a stone that releases a zombie near impact; zombies can be shot down, and retire after dealing about one normal shell of total damage. |
 | Healing Tank / 힐링탱크 | Deals reduced damage, but self-hits restore part of missing health with a sparkle effect. |
