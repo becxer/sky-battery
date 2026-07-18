@@ -362,8 +362,8 @@ async function join(name) {
 }
 
 function updateLoginTankChoice(state) {
-  const isSolo = state && Number(state.playerCount) === 1;
-  loginTankChoice.hidden = !isSolo;
+  const canChooseTank = state?.phase === "playing" && Number(state.playerCount) >= 1;
+  loginTankChoice.hidden = !canChooseTank;
 }
 
 async function refreshLoginOptions() {

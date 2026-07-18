@@ -159,8 +159,8 @@ termux-wake-unlock
 1. Open `/host.html`.
 2. Choose player count from `1` to `6`.
 3. Press `Start World`.
-4. Each player opens the game URL and enters a name.
-5. In one-player mode, the player can choose a tank type and fight a dummy target.
+4. Each player opens the game URL, enters a name, and chooses a tank type or Random.
+5. In one-player mode, the player fights a dummy target.
 
 Pressing `Recreate World` returns everyone to setup and generates a fresh map.
 

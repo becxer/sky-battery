@@ -1323,9 +1323,9 @@ def recreate_world():
     sounds.append("join")
 
 
-def apply_solo_tank_choice(seat, tank_type):
-    if player_count() == 1 and seat == 0 and tank_type in TANK_TYPES:
-        set_player_tank_type(state["players"][0], tank_type)
+def apply_player_tank_choice(seat, tank_type):
+    if seat in range(player_count()) and tank_type in TANK_TYPES:
+        set_player_tank_type(state["players"][seat], tank_type)
 
 
 def next_projectile_id():
@@ -1342,7 +1342,7 @@ def assign_seat(client_id, name, tank_type=None):
         existing["name"] = name
         if existing["seat"] in range(player_count()):
             state["players"][existing["seat"]]["name"] = name
-            apply_solo_tank_choice(existing["seat"], tank_type)
+            apply_player_tank_choice(existing["seat"], tank_type)
         return existing["seat"]
 
     taken = {c["seat"] for c in clients.values()}
@@ -1351,7 +1351,7 @@ def assign_seat(client_id, name, tank_type=None):
     clients[client_id] = {"name": name, "seat": seat, "last": time.time()}
     if seat in range(count):
         state["players"][seat]["name"] = name
-        apply_solo_tank_choice(seat, tank_type)
+        apply_player_tank_choice(seat, tank_type)
     sounds.append("join")
     return seat
 

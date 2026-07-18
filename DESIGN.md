@@ -46,4 +46,4 @@ Mobile controls sit over the bottom of the game: left/right triangle buttons, a 
 
 ## Extension Checklist
 
-When adding a weapon or tank, update `TANK_TYPES` and weights in `server.py`, implement projectile behavior and damage resolution on the server, add render metadata and projectile visuals in `game.js`, add a tank option in `index.html` for single-player selection, add or reuse sounds, then test collision, terrain destruction, KO/retire behavior, and turn advancement.
+When adding a weapon or tank, update `TANK_TYPES` and weights in `server.py`, implement projectile behavior and damage resolution on the server, add render metadata and projectile visuals in `game.js`, add a tank option in `index.html`, add or reuse sounds, then test collision, terrain destruction, KO/retire behavior, and turn advancement.
